@@ -1,0 +1,152 @@
+[package]
+authors = ['Parity Technologies <admin@parity.io>']
+edition = '2018'
+name = 'node-template-runtime'
+version = '0.9.0'
+[dependencies.aura]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'srml-aura'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.balances]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'srml-balances'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.client]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'substrate-client'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.consensus]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'srml-consensus'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.consensus-aura]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'substrate-consensus-aura-primitives'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.executive]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'srml-executive'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.fees]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'srml-fees'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.indices]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'srml-indices'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.parity-codec]
+default-features = false
+version = '3.0'
+
+[dependencies.parity-codec-derive]
+default-features = false
+version = '3.0'
+
+[dependencies.primitives]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'substrate-primitives'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.rstd]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'sr-std'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.runtime-io]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'sr-io'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.runtime-primitives]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'sr-primitives'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.safe-mix]
+default-features = false
+version = '1.0'
+
+[dependencies.serde]
+default-features = false
+version = '1.0'
+
+[dependencies.serde_derive]
+optional = true
+version = '1.0'
+
+[dependencies.sudo]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'srml-sudo'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.support]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'srml-support'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.system]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'srml-system'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.timestamp]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'srml-timestamp'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[dependencies.version]
+default_features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'sr-version'
+rev = 'b7bb36000e2d7fda59978311e9147e6b5be6c29e'
+
+[features]
+default = ['std']
+std = [
+    'parity-codec/std',
+    'parity-codec-derive/std',
+    'primitives/std',
+    'client/std',
+    'rstd/std',
+    'runtime-io/std',
+    'support/std',
+    'balances/std',
+    'fees/std',
+    'executive/std',
+    'aura/std',
+    'indices/std',
+    'primitives/std',
+    'system/std',
+    'timestamp/std',
+    'sudo/std',
+    'version/std',
+    'serde_derive',
+    'serde/std',
+    'safe-mix/std',
+    'consensus-aura/std',
+]

@@ -1,0 +1,7 @@
+{
+    "Metadata": {
+        "ipfs_hash": "H256",
+        "time": "u64",
+        "search_text": "Vec<u8>"
+    }
+}
