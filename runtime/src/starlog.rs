@@ -23,9 +23,12 @@ decl_storage! {
 	trait Store for Module<T: Trait> as StarlogStorage {
 		// TODO: ipfs hash sha256 base58 vs BlakeTwo256 ?
 		// how to best link both system ? 
+		// TODO: query for multiple entries
+
+		OwnedMetaArray get(metadata_of_user_by_index): map (T::AccountId, u64) => Metadata<T::Hash, T::Moment>;
+		OwnedMetaCount get(user_meta_count): map T::AccountId => u64;
+
 		HashOwner get(owner_of_hash): map T::Hash => Option<T::AccountId>;
-		//TODO: owning multiple metadata?
-		OwnedMeta get(metadata_of_user): map T::AccountId => Metadata<T::Hash, T::Moment>;
 	}
 }
 
@@ -49,7 +52,13 @@ decl_module! {
 				meta_json,
             };
 
-			<OwnedMeta<T>>::insert(&owner, new_metadata);
+			let count = Self::user_meta_count(&owner);
+			let updated_count = count.checked_add(1)
+                .ok_or("Overflow adding new metadata")?;
+
+			<OwnedMetaArray<T>>::insert((owner.clone(), count), new_metadata);
+            <OwnedMetaCount<T>>::insert(&owner, updated_count);
+
 			<HashOwner<T>>::insert(ipfs_hash, &owner);
 
 			Self::deposit_event(RawEvent::Stored(owner, ipfs_hash));

@@ -4,13 +4,12 @@
 
 > IPFS Metadata Blockchain based on Substrate
 
-The goal of Starlog is to research and develop a solo chain or potential parachain, which stores metadata for IPFS as non-fungible tokens. Thus, making IPFS data searchable, integrating the concept of ownership and identity for IPFS uploads as well as making it possible to combine content- and location-addressed storage for faster initial loading of non-distributed IPFS content. The project was initiated to improve Dweb.page. 
+The goal of Starlog is to research and develop a solo chain or potential parachain, which stores metadata for IPFS as non-fungible tokens. Thus, making IPFS data searchable, integrating the concept of ownership and identity for IPFS uploads as well as making it possible to combine content- and location-addressed storage for faster initial loading of non-distributed IPFS content. The project was initiated to improve [Dweb.page](https://github.com/PACTCare/Dweb.page). 
 
 ---
 
 ## Table of Contents
 
-- [Security](#security)
 - [Install](#install)
 - [Usage](#usage)
 - [Maintainer](#maintainer)
@@ -26,14 +25,13 @@ See [Parity's Substrate](https://github.com/paritytech/substrate).
 ```
 ./build.sh
 cargo build --release
-./target/release/substratekitties purge-chain --dev
-./target/release/substratekitties --dev
+./target/release/starlog purge-chain --dev
+./target/release/starlog --dev
 ```
 
 https://polkadot.js.org/apps/
 
-Registering a Custom Struct
-Metadata.json
+Registering a Custom Struct [Metadata.json](https://github.com/PACTCare/Starlog/blob/master/Metadata.json)
 
 ## Maintainer
 
@@ -46,4 +44,4 @@ If you want to help either join our **[discord server](https://discord.gg/VMj7PF
 If editing the README, please conform to the [standard-readme specification](https://github.com/RichardLitt/standard-readme).
 
 ## License
-[MIT License](https://github.com/PACTCare/Dweb.page/blob/master/LICENSE) © PACT Care B.V.
+[MIT License](https://github.com/PACTCare/Starlog/blob/master/LICENSE) © PACT Care B.V.
