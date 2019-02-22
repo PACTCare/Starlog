@@ -13,11 +13,11 @@ pub struct Metadata<Time, Balance> {
 	// ipfs_hash as Vec<u8> instead of T::Hash to support sha256 base58 and potentially multihash
 	ipfs_hash: Vec<u8>,
 	time: Time,
-	// price 0 = open source
-	price: Balance,
+	price: Balance, // price 0 = open source
 	availability: bool,
 	meta_json: Vec<u8>,
 	// Contains tag, text, title, filetype as Vec<u8>?
+	// searchable?
 	// because storing an additional metadata hash on IPFS is probably too slow
 	// TODO: availability system
 }
@@ -29,8 +29,10 @@ pub trait Trait: timestamp::Trait + balances::Trait {
 decl_storage! {
 	trait Store for Module<T: Trait> as StarlogStorage {
 		// TODO: query for multiple entries
+
 		OwnedMetaArray get(metadata_of_user_by_index): map (T::AccountId, u64) => Metadata<T::Moment, T::Balance>;
 		OwnedMetaCount get(user_meta_count): map T::AccountId => u64;
+		OwnedMetaIndex: map Vec<u8> => u64;
 
 		HashOwner get(owner_of_hash): map Vec<u8> => Option<T::AccountId>;
 	}
@@ -68,11 +70,20 @@ decl_module! {
 			Ok(())
 		}
 
+		fn transfer(origin, receiver: T::AccountId, ipfs_hash: Vec<u8>) -> Result {
+			let sender = ensure_signed(origin)?;
+			let owner = Self::owner_of_hash(&ipfs_hash).ok_or("No one owns this hash!")?;
+			ensure!(owner == sender, "You do not own this hash!");
+
+			Self::_transfer(sender, receiver, ipfs_hash)?;
+
+			Ok(())
+		}
+		//TODO: update availibility
+
 		//TODO: should the owner have the right to remove it?
 
-		//TODO: Transfer ownership
-
-		//TODO: availability information
+		//TODO: change price
 	}
 }
 
@@ -83,16 +94,50 @@ decl_event!(
         <T as timestamp::Trait>::Moment
     {
         Stored(AccountId, Moment, Vec<u8>),
+		TransferOwnership(AccountId, AccountId),
     }
 );
 
 impl<T: Trait> Module<T> {
+	fn _transfer(sender: T::AccountId, receiver: T::AccountId, ipfs_hash: Vec<u8>) -> Result {
+		let receiver_total_count = Self::user_meta_count(&receiver);
+		let new_receiver_count = receiver_total_count
+			.checked_add(1)
+			.ok_or("Transfer causes overflow of metadata count")?;
+
+		let sender_total_count = Self::user_meta_count(&sender);
+		let new_sender_count = sender_total_count
+			.checked_sub(1)
+			.ok_or("Transfer causes underflow of metadata count")?;
+
+		let meta_index = <OwnedMetaIndex<T>>::get(&ipfs_hash);
+		let meta_object = <OwnedMetaArray<T>>::get((sender.clone(), new_sender_count));
+		if meta_index != new_sender_count {
+			<OwnedMetaArray<T>>::insert((sender.clone(), meta_index), &meta_object);
+			<OwnedMetaIndex<T>>::insert(&meta_object.ipfs_hash, meta_index);
+		}
+
+		<HashOwner<T>>::insert(&ipfs_hash, &receiver);
+		<OwnedMetaIndex<T>>::insert(ipfs_hash, receiver_total_count);
+
+		<OwnedMetaArray<T>>::remove((sender.clone(), new_sender_count));
+		<OwnedMetaArray<T>>::insert((receiver.clone(), receiver_total_count), meta_object);
+
+		<OwnedMetaCount<T>>::insert(&sender, new_sender_count);
+		<OwnedMetaCount<T>>::insert(&receiver, new_receiver_count);
+
+		Self::deposit_event(RawEvent::TransferOwnership(sender, receiver));
+
+		Ok(())
+	}
+
 	fn _user_store(user: T::AccountId, metadata: Metadata<T::Moment, T::Balance>) -> Result {
 		let count = Self::user_meta_count(&user);
 		let updated_count = count.checked_add(1).ok_or("Overflow adding new metadata")?;
 
 		<OwnedMetaArray<T>>::insert((user.clone(), count), &metadata);
 		<OwnedMetaCount<T>>::insert(&user, updated_count);
+		<OwnedMetaIndex<T>>::insert(&metadata.ipfs_hash, updated_count);
 
 		<HashOwner<T>>::insert(&metadata.ipfs_hash, &user);
 

@@ -18,10 +18,11 @@ The goal of Starlog is to research and develop a solo chain or potential paracha
 
 ## Install
 
-See [Parity's Substrate](https://github.com/paritytech/substrate).
+If you haven’t installed [Substrate](https://www.parity.io/substrate/) before, check out the official [Substrate documentation](https://substrate.readme.io/docs/getting-started). If you are a windows user, I also suggest taking a look at the [Substrate GitHub](https://github.com/paritytech/substrate).
 
 ## Usage
 
+Clone this repository and run the following commands:
 ```
 ./build.sh
 cargo build --release
@@ -29,9 +30,14 @@ cargo build --release
 ./target/release/starlog --dev
 ```
 
-https://polkadot.js.org/apps/
+You can interact with your local chain using the [Polkadot-JS Apps UI](https://polkadot.js.org/apps/).
+Therefore, you need to adjust the Settings:
+```
+Remote node/endpoint to connect to > Local Node (127.0.0.1:9944)
+Default Interface Theme > Substrate
+```
 
-Registering a Custom Struct [Metadata.json](https://github.com/PACTCare/Starlog/blob/master/Metadata.json)
+Under the developer tab upload and save the [Metadata.json](https://github.com/PACTCare/Starlog/blob/master/Metadata.json) to register the custom struct. 
 
 ## Maintainer
 
