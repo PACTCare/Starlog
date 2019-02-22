@@ -1,7 +1,9 @@
 {
     "Metadata": {
-        "ipfs_hash": "H256",
+        "ipfs_hash": "Vec<u8>",
         "time": "u64",
+        "price": "Balance",
+        "availability": "bool",
         "meta_json": "Vec<u8>"
     }
 }
