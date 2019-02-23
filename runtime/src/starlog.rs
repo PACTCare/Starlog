@@ -8,7 +8,7 @@ const IPFS_SHA256_LENGTH: usize = 46;
 const IPFS_SHA256_FIRST_BYTE: u8 = 81;
 const IPFS_SHA256_SECOND_BYTE: u8 = 109;
 
-#[derive(Encode, Decode, Default, Clone, PartialEq)]
+#[derive(Debug, Encode, Decode, Default, Clone, PartialEq)]
 pub struct Metadata<Time, Balance> {
 	// ipfs_hash as Vec<u8> instead of T::Hash to support sha256 base58 and potentially multihash
 	ipfs_hash: Vec<u8>,
@@ -34,6 +34,7 @@ decl_storage! {
 		OwnedMetaCount get(user_meta_count): map T::AccountId => u64;
 		OwnedMetaIndex: map Vec<u8> => u64;
 
+		HashMeta get(meta_for_hash): map Vec<u8> => Metadata<T::Moment, T::Balance>;
 		HashOwner get(owner_of_hash): map Vec<u8> => Option<T::AccountId>;
 	}
 }
@@ -44,7 +45,7 @@ decl_module! {
 
 		pub fn store_meta(origin, ipfs_hash: Vec<u8>, meta_json: Vec<u8>, price: T::Balance) -> Result {
 			// Signature
-			let owner = ensure_signed(origin)?;
+			let sender = ensure_signed(origin)?;
 
 			// TODO: multihash support
 			ensure!(ipfs_hash.len() == IPFS_SHA256_LENGTH, "Not a valid IPFS Hash");
@@ -65,25 +66,54 @@ decl_module! {
 				meta_json,
 			};
 
-			Self::_user_store(owner, new_metadata)?;
+			Self::_user_store(sender, new_metadata)?;
 
 			Ok(())
 		}
 
 		fn transfer(origin, receiver: T::AccountId, ipfs_hash: Vec<u8>) -> Result {
 			let sender = ensure_signed(origin)?;
-			let owner = Self::owner_of_hash(&ipfs_hash).ok_or("No one owns this hash!")?;
-			ensure!(owner == sender, "You do not own this hash!");
+			Self::_ownership_rights_check(sender.clone(), ipfs_hash.clone())?;
 
 			Self::_transfer(sender, receiver, ipfs_hash)?;
 
 			Ok(())
 		}
-		//TODO: update availibility
+
+		fn change_price(origin, ipfs_hash: Vec<u8>, price: T::Balance) -> Result {
+			let sender = ensure_signed(origin)?;
+			Self::_ownership_rights_check(sender.clone(), ipfs_hash.clone())?;
+
+			let mut metadata = Self::meta_for_hash(&ipfs_hash);
+			metadata.price = price;
+
+			let meta_index = <OwnedMetaIndex<T>>::get(&ipfs_hash);
+			<OwnedMetaArray<T>>::insert((sender.clone(), meta_index -1), &metadata);
+			<HashMeta<T>>::insert(ipfs_hash, metadata);
+
+			Self::deposit_event(RawEvent::PriceSet(sender, price));
+			Ok(())
+		}
+
+		//TODO: buy
+
+		//TODO: some kind of voting system for the availibility of data
+		fn unavailable(origin, ipfs_hash: Vec<u8>) -> Result{
+			let sender = ensure_signed(origin)?;
+			Self::_ownership_rights_check(sender.clone(), ipfs_hash.clone())?;
+
+			let mut metadata = Self::meta_for_hash(&ipfs_hash);
+			metadata.availability = false;
+
+			let meta_index = <OwnedMetaIndex<T>>::get(&ipfs_hash);
+			<OwnedMetaArray<T>>::insert((sender.clone(), meta_index -1), &metadata);
+			<HashMeta<T>>::insert(ipfs_hash, metadata);
+
+			Self::deposit_event(RawEvent::AvailabilityUpdate(sender, false));
+			Ok(())
+		}
 
 		//TODO: should the owner have the right to remove it?
-
-		//TODO: change price
 	}
 }
 
@@ -91,14 +121,28 @@ decl_event!(
     pub enum Event<T>
     where
         <T as system::Trait>::AccountId,
-        <T as timestamp::Trait>::Moment
+        <T as timestamp::Trait>::Moment,
+		<T as balances::Trait>::Balance
     {
         Stored(AccountId, Moment, Vec<u8>),
 		TransferOwnership(AccountId, AccountId),
+		PriceSet(AccountId, Balance),
+		AvailabilityUpdate(AccountId, bool),
     }
 );
 
 impl<T: Trait> Module<T> {
+	fn _ownership_rights_check(sender: T::AccountId, ipfs_hash: Vec<u8>) -> Result {
+		//TODO: Fix always triggers hash doesn't exist
+		ensure!(
+			<HashMeta<T>>::exists(&ipfs_hash),
+			"This hash does not exist"
+		);
+		let owner = Self::owner_of_hash(ipfs_hash).ok_or("No owner for this hash!")?;
+		ensure!(owner == sender, "You are not the owner");
+		Ok(())
+	}
+
 	fn _transfer(sender: T::AccountId, receiver: T::AccountId, ipfs_hash: Vec<u8>) -> Result {
 		let receiver_total_count = Self::user_meta_count(&receiver);
 		let new_receiver_count = receiver_total_count
@@ -140,9 +184,12 @@ impl<T: Trait> Module<T> {
 		<OwnedMetaIndex<T>>::insert(&metadata.ipfs_hash, updated_count);
 
 		<HashOwner<T>>::insert(&metadata.ipfs_hash, &user);
+		<HashMeta<T>>::insert(&metadata.ipfs_hash, &metadata);
 
 		Self::deposit_event(RawEvent::Stored(user, metadata.time, metadata.ipfs_hash));
 
 		Ok(())
 	}
 }
+
+//TODO: Refactor/Tests
