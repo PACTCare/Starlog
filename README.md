@@ -4,7 +4,19 @@
 
 > IPFS Metadata Blockchain based on Substrate
 
-The goal of Starlog is to research and develop a solo chain or potential parachain, which stores metadata for IPFS as non-fungible tokens. Thus, making IPFS data searchable, providing availability information, integrating the concept of ownership and identity for IPFS uploads as well as making it possible to combine content- and location-addressed storage for faster initial loading of non-distributed IPFS content. The project was initiated to improve [Dweb.page](https://github.com/PACTCare/Dweb.page). 
+The goal of Starlog is to research and develop an open source solo chain or potential parachain, which stores metadata for IPFS as non-fungible tokens. The metadata will be signed by the uploaders and include availability information, a price, a timestamp, a license, information about the uploaded file itself as well as the location/gateway of the initial upload.
+
+Therefore, Starlog provides the following key benefits for IPFS uploads:
+
+- Searchability via human-readable names
+- Clear ownership for IPFS uploads
+- Marketplace for uploaded content
+- Electronic identity based on personal IPFS uploads
+- Faster initial loading of non-distributed IPFS content
+
+Furthermore, the combination of IPFS and Substrate seems to be a potential scalable and relatively cheap solution for all kinds of distributed applications. 
+
+The project was initiated to improve [Dweb.page](https://github.com/PACTCare/Dweb.page). 
 
 ---
 

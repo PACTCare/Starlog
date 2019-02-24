@@ -13,9 +13,10 @@ pub struct Metadata<Time, Balance> {
 	// ipfs_hash as Vec<u8> instead of T::Hash to support sha256 base58 and potentially multihash
 	ipfs_hash: Vec<u8>,
 	time: Time,
-	price: Balance, // price 0 = open source
+	price: Balance, // price 0 = open source, not for sale?
 	availability: bool,
 	meta_json: Vec<u8>,
+	// TODO: Dual ownership = multisignature
 	// Contains tag, text, title, filetype as Vec<u8>?
 	// searchable?
 	// because storing an additional metadata hash on IPFS is probably too slow
