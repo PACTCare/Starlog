@@ -1,5 +1,6 @@
 use parity_codec_derive::{Decode, Encode};
 use rstd::vec::Vec;
+use runtime_primitives::traits::Zero;
 use support::{decl_event, decl_module, decl_storage, dispatch::Result, ensure, StorageMap};
 use system::ensure_signed;
 
@@ -9,18 +10,20 @@ const IPFS_SHA256_FIRST_BYTE: u8 = 81;
 const IPFS_SHA256_SECOND_BYTE: u8 = 109;
 
 #[derive(Debug, Encode, Decode, Default, Clone, PartialEq)]
-pub struct Metadata<Time, Balance> {
+pub struct Metadata<Time, AccountId, Balance> {
 	// ipfs_hash as Vec<u8> instead of T::Hash to support sha256 base58 and potentially multihash
 	ipfs_hash: Vec<u8>,
 	time: Time,
-	price: Balance, // price 0 = open source, not for sale?
-	availability: bool,
+	owner: AccountId,
+	// no owner = open source
+	// someone else owner = only right to use it
+	// multiple owners
+	price: Balance,     // price 0 not for sale,
+	availability: bool, // TODO: complex availability system
 	meta_json: Vec<u8>,
-	// TODO: Dual ownership = multisignature
 	// Contains tag, text, title, filetype as Vec<u8>?
 	// searchable?
 	// because storing an additional metadata hash on IPFS is probably too slow
-	// TODO: availability system
 }
 
 pub trait Trait: timestamp::Trait + balances::Trait {
@@ -31,11 +34,11 @@ decl_storage! {
 	trait Store for Module<T: Trait> as StarlogStorage {
 		// TODO: query for multiple entries
 
-		OwnedMetaArray get(metadata_of_user_by_index): map (T::AccountId, u64) => Metadata<T::Moment, T::Balance>;
+		OwnedMetaArray get(metadata_of_user_by_index): map (T::AccountId, u64) => Metadata<T::Moment, T::AccountId, T::Balance>;
 		OwnedMetaCount get(user_meta_count): map T::AccountId => u64;
 		OwnedMetaIndex: map Vec<u8> => u64;
 
-		HashMeta get(meta_for_hash): map Vec<u8> => Metadata<T::Moment, T::Balance>;
+		HashMeta get(meta_for_hash): map Vec<u8> => Metadata<T::Moment, T::AccountId, T::Balance>;
 		HashOwner get(owner_of_hash): map Vec<u8> => Option<T::AccountId>;
 	}
 }
@@ -62,6 +65,7 @@ decl_module! {
 			let new_metadata = Metadata {
 				ipfs_hash,
 				time,
+				owner: sender.clone(),
 				price,
 				availability: true, //IPFS upload is available, localhost?
 				meta_json,
@@ -97,6 +101,25 @@ decl_module! {
 		}
 
 		//TODO: buy
+		fn buy_meta(origin, ipfs_hash: Vec<u8>) -> Result {
+			let sender = ensure_signed(origin)?;
+			ensure!(<HashMeta<T>>::exists(&ipfs_hash), "This cat does not exist");
+
+			let owner = Self::owner_of_hash(&ipfs_hash).ok_or("No owner for this hash!")?;
+			ensure!(owner != sender, "You are already the owner of this hash.");
+
+			let metadata = Self::meta_for_hash(&ipfs_hash);
+
+			let price = metadata.price;
+			ensure!(!price.is_zero(), "The cat you want to buy is not for sale");
+			 <balances::Module<T>>::make_transfer(&sender, &owner, price)?;
+
+			Self::_transfer(owner.clone(), sender.clone(), ipfs_hash)?;
+
+			Self::deposit_event(RawEvent::Bought(sender, owner, price));
+
+			Ok(())
+		}
 
 		//TODO: some kind of voting system for the availibility of data
 		fn unavailable(origin, ipfs_hash: Vec<u8>) -> Result{
@@ -129,6 +152,7 @@ decl_event!(
 		TransferOwnership(AccountId, AccountId),
 		PriceSet(AccountId, Balance),
 		AvailabilityUpdate(AccountId, bool),
+		Bought(AccountId, AccountId, Balance),
     }
 );
 
@@ -145,6 +169,7 @@ impl<T: Trait> Module<T> {
 	}
 
 	fn _transfer(sender: T::AccountId, receiver: T::AccountId, ipfs_hash: Vec<u8>) -> Result {
+		//TODO: fix ownership rights
 		let receiver_total_count = Self::user_meta_count(&receiver);
 		let new_receiver_count = receiver_total_count
 			.checked_add(1)
@@ -176,7 +201,10 @@ impl<T: Trait> Module<T> {
 		Ok(())
 	}
 
-	fn _user_store(user: T::AccountId, metadata: Metadata<T::Moment, T::Balance>) -> Result {
+	fn _user_store(
+		user: T::AccountId,
+		metadata: Metadata<T::Moment, T::AccountId, T::Balance>,
+	) -> Result {
 		let count = Self::user_meta_count(&user);
 		let updated_count = count.checked_add(1).ok_or("Overflow adding new metadata")?;
 
