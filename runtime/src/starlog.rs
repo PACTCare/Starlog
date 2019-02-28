@@ -1,7 +1,9 @@
 use parity_codec_derive::{Decode, Encode};
 use rstd::vec::Vec;
 use runtime_primitives::traits::Zero;
-use support::{decl_event, decl_module, decl_storage, dispatch::Result, ensure, StorageMap};
+use support::{
+	decl_event, decl_module, decl_storage, dispatch::Result, ensure, StorageMap, StorageValue,
+};
 use system::ensure_signed;
 
 const BYTEARRAY_LIMIT: usize = 1000;
@@ -18,7 +20,7 @@ pub struct Metadata<Time, AccountId, Balance> {
 	// no owner = open source
 	// someone else owner = only right to use it
 	// multiple owners
-	price: Balance,     // price 0 not for sale,
+	price: Balance,     // price 0 not for sale
 	availability: bool, // TODO: complex availability system
 	meta_json: Vec<u8>,
 	// Contains tag, text, title, filetype as Vec<u8>?
@@ -32,7 +34,10 @@ pub trait Trait: timestamp::Trait + balances::Trait {
 
 decl_storage! {
 	trait Store for Module<T: Trait> as StarlogStorage {
-		// TODO: query for multiple entries
+		// TODO: Is there a better solution for query for metadata without subscription
+		MetadataArray get(metadata_by_index): map u64 => Vec<u8>;
+		MetadataCount get(metadata_count): u64;
+		MetadataIndex: map Vec<u8> => u64;
 
 		OwnedMetaArray get(metadata_of_user_by_index): map (T::AccountId, u64) => Metadata<T::Moment, T::AccountId, T::Balance>;
 		OwnedMetaCount get(user_meta_count): map T::AccountId => u64;
@@ -86,6 +91,7 @@ decl_module! {
 		}
 
 		fn change_price(origin, ipfs_hash: Vec<u8>, price: T::Balance) -> Result {
+			// TODO: only usage rights: if price 0 and not owner, you can't change the price
 			let sender = ensure_signed(origin)?;
 			Self::_ownership_rights_check(sender.clone(), ipfs_hash.clone())?;
 
@@ -100,7 +106,7 @@ decl_module! {
 			Ok(())
 		}
 
-		//TODO: buy
+		//TODO: Change ownership
 		fn buy_meta(origin, ipfs_hash: Vec<u8>) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(<HashMeta<T>>::exists(&ipfs_hash), "This cat does not exist");
@@ -207,6 +213,15 @@ impl<T: Trait> Module<T> {
 	) -> Result {
 		let count = Self::user_meta_count(&user);
 		let updated_count = count.checked_add(1).ok_or("Overflow adding new metadata")?;
+
+		let metadata_count = Self::metadata_count();
+		let new_metadata_count = metadata_count
+			.checked_add(1)
+			.ok_or("Overflow adding new metadata!")?;
+
+		<MetadataArray<T>>::insert(metadata_count, &metadata.ipfs_hash);
+		<MetadataCount<T>>::put(new_metadata_count);
+		<MetadataIndex<T>>::insert(&metadata.ipfs_hash, metadata_count);
 
 		<OwnedMetaArray<T>>::insert((user.clone(), count), &metadata);
 		<OwnedMetaCount<T>>::insert(&user, updated_count);

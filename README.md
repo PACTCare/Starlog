@@ -6,7 +6,24 @@
 
 The goal of Starlog is to research and develop an open source solo chain or potential parachain, which stores metadata for IPFS as non-fungible tokens. The metadata will be signed by the uploaders and include availability information, a price, a timestamp, owner(s), information about the uploaded file itself as well as the location/gateway of the initial upload.
 
-Starlog, therefore, provides the following key benefits for IPFS uploads:
+---
+
+## Table of Contents
+
+- [Background](#background)
+- [Install](#install)
+- [Usage](#usage)
+- [Maintainer](#maintainer)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Background
+
+The project was initiated to improve [Dweb.page](https://github.com/PACTCare/Dweb.page/tree/starlog). That's why [Dweb.page](https://github.com/PACTCare/Dweb.page/tree/starlog) is used as a potential first user-interface/testing environment for Starlog (see image below). 
+
+<img src="https://pact.online/dist/img/starlog_dweb.PNG" width="400px" alt="Dweb.page + Starlog">
+
+However, Starlog could potentially be implemented in all kinds of IPFS projects. Starlog provides the following key benefits for IPFS uploads:
 
 - Searchability via human-readable names
 - Copyright system for IPFS uploads
@@ -15,18 +32,6 @@ Starlog, therefore, provides the following key benefits for IPFS uploads:
 - Faster initial loading of non-distributed IPFS content
 
 Furthermore, the combination of IPFS and Substrate seems to be a potential scalable and relatively cheap solution for all kinds of distributed applications. 
-
-The project was initiated to improve [Dweb.page](https://github.com/PACTCare/Dweb.page). 
-
----
-
-## Table of Contents
-
-- [Install](#install)
-- [Usage](#usage)
-- [Maintainer](#maintainer)
-- [Contributing](#contributing)
-- [License](#license)
 
 ## Install
 
