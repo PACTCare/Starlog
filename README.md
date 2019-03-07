@@ -1,10 +1,10 @@
-<img src="https://pact.online/dist/img/starlog.png" width="200">
+<img src="https://pact.online/dist/img/starlog.png" width="240">
 
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 
 > IPFS Metadata Blockchain based on Substrate
 
-The goal of Starlog is to research and develop an open source solo chain or potential parachain, which stores metadata for IPFS as non-fungible tokens. The metadata will be signed by the uploaders and include availability information, a price, a timestamp, owner(s), information about the uploaded file itself as well as the location/gateway of the initial upload.
+The goal of Starlog is to research and develop an open source solo chain or potential parachain, which stores metadata for IPFS as non-fungible tokens as well as unavailability data. The metadata will be signed by the uploaders and include availability information, a price, a timestamp, owner(s), information about the uploaded file itself as well as the location/gateway of the initial upload.
 
 ---
 
@@ -21,7 +21,7 @@ The goal of Starlog is to research and develop an open source solo chain or pote
 
 The project was initiated to improve [Dweb.page](https://github.com/PACTCare/Dweb.page/tree/starlog). That's why [Dweb.page](https://github.com/PACTCare/Dweb.page/tree/starlog) is used as a potential first user-interface/testing environment for Starlog (see image below). 
 
-<img src="https://pact.online/dist/img/starlog_dweb.PNG" width="400px" alt="Dweb.page + Starlog">
+<img src="https://pact.online/dist/img/starlog_dweb.PNG" width="300px" alt="Dweb.page + Starlog">
 
 However, Starlog could potentially be implemented in all kinds of IPFS projects. Starlog provides the following key benefits for IPFS uploads:
 
@@ -31,7 +31,11 @@ However, Starlog could potentially be implemented in all kinds of IPFS projects.
 - Electronic identity based on personal IPFS uploads
 - Faster initial loading of non-distributed IPFS content
 
-Furthermore, the combination of IPFS and Substrate seems to be a potential scalable and relatively cheap solution for all kinds of distributed applications. 
+Rather than trying to find one single truth directly on the blockchain (e.g., token-curated registry), the idea is to develop a subscription-based system (see image below). 
+
+<img src="https://pact.online/dist/img/sbs.png" width="400px" alt="subscription-based system ">
+
+ This means so-called Publishers store immutable metadata and unavailability data on the chain. Consumers decide which publishers (signatures) they trust and follow. In practice, this will be automatically archived by rules hard-coded into the interface (e.g., dweb.page). The benefit of the system is the immediate availability of information without the requirement of an additional voting system as well as a filtering system, which takes individual preferences into account.  
 
 ## Install
 

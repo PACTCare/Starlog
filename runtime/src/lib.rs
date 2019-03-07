@@ -3,36 +3,38 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(not(feature = "std"), feature(alloc))]
 // `construct_runtime!` does a lot of recursion and requires us to increase the limit to 256.
-#![recursion_limit="256"]
+#![recursion_limit = "256"]
 
-#[cfg(feature = "std")]
-use serde_derive::{Serialize, Deserialize};
-use parity_codec_derive::{Encode, Decode};
-use rstd::prelude::*;
+use client::{
+	block_builder::api::{self as block_builder_api, CheckInherentsResult, InherentData},
+	impl_runtime_apis, runtime_api,
+};
+use parity_codec_derive::{Decode, Encode};
 #[cfg(feature = "std")]
 use primitives::bytes;
 use primitives::{Ed25519AuthorityId, OpaqueMetadata};
+use rstd::prelude::*;
 use runtime_primitives::{
-	ApplyResult, transaction_validity::TransactionValidity, Ed25519Signature, generic,
-	traits::{self, BlakeTwo256, Block as BlockT, StaticLookup}, create_runtime_str
+	create_runtime_str, generic,
+	traits::{self, BlakeTwo256, Block as BlockT, StaticLookup},
+	transaction_validity::TransactionValidity,
+	ApplyResult, Ed25519Signature,
 };
-use client::{
-	block_builder::api::{CheckInherentsResult, InherentData, self as block_builder_api},
-	runtime_api, impl_runtime_apis
-};
-use version::RuntimeVersion;
+#[cfg(feature = "std")]
+use serde_derive::{Deserialize, Serialize};
 #[cfg(feature = "std")]
 use version::NativeVersion;
+use version::RuntimeVersion;
 
 // A few exports that help ease life for downstream crates.
+pub use balances::Call as BalancesCall;
+pub use consensus::Call as ConsensusCall;
 #[cfg(any(feature = "std", test))]
 pub use runtime_primitives::BuildStorage;
-pub use consensus::Call as ConsensusCall;
-pub use timestamp::Call as TimestampCall;
-pub use balances::Call as BalancesCall;
-pub use runtime_primitives::{Permill, Perbill};
+pub use runtime_primitives::{Perbill, Permill};
+pub use support::{construct_runtime, StorageValue};
 pub use timestamp::BlockPeriod;
-pub use support::{StorageValue, construct_runtime};
+pub use timestamp::Call as TimestampCall;
 
 /// Alias to Ed25519 pubkey that identifies an account on the chain.
 pub type AccountId = primitives::H256;
@@ -46,8 +48,10 @@ pub type BlockNumber = u64;
 /// Index of an account's extrinsic in the chain.
 pub type Nonce = u64;
 
-/// Import starlog runtime
-mod starlog;
+/// Import starlog runtimes
+mod metadata;
+
+mod unavailability;
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
 /// the specifics of the runtime. They can then be made to be agnostic over specific formats
@@ -59,14 +63,15 @@ pub mod opaque {
 	/// Opaque, encoded, unchecked extrinsic.
 	#[derive(PartialEq, Eq, Clone, Default, Encode, Decode)]
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
-	pub struct UncheckedExtrinsic(#[cfg_attr(feature = "std", serde(with="bytes"))] pub Vec<u8>);
+	pub struct UncheckedExtrinsic(#[cfg_attr(feature = "std", serde(with = "bytes"))] pub Vec<u8>);
 	impl traits::Extrinsic for UncheckedExtrinsic {
 		fn is_signed(&self) -> Option<bool> {
 			None
 		}
 	}
 	/// Opaque block header type.
-	pub type Header = generic::Header<BlockNumber, BlakeTwo256, generic::DigestItem<Hash, Ed25519AuthorityId>>;
+	pub type Header =
+		generic::Header<BlockNumber, BlakeTwo256, generic::DigestItem<Hash, Ed25519AuthorityId>>;
 	/// Opaque block type.
 	pub type Block = generic::Block<Header, UncheckedExtrinsic>;
 	/// Opaque block identifier type.
@@ -175,7 +180,11 @@ impl sudo::Trait for Runtime {
 	type Proposal = Call;
 }
 
-impl starlog::Trait for Runtime {
+impl metadata::Trait for Runtime {
+	type Event = Event;
+}
+
+impl unavailability::Trait for Runtime {
 	type Event = Event;
 }
 
@@ -193,7 +202,8 @@ construct_runtime!(
 		Balances: balances,
 		Sudo: sudo,
 		Fees: fees::{Module, Storage, Config<T>, Event<T>},
-		Starlog: starlog::{Module, Call, Storage, Event<T>},
+		Metadata: metadata::{Module, Call, Storage, Event<T>},
+		Unavailable: unavailability::{Module,Call,Storage, Event<T>},
 	}
 );
 
@@ -208,7 +218,8 @@ pub type Block = generic::Block<Header, UncheckedExtrinsic>;
 /// BlockId type as expected by this runtime.
 pub type BlockId = generic::BlockId<Block>;
 /// Unchecked extrinsic type as expected by this runtime.
-pub type UncheckedExtrinsic = generic::UncheckedMortalCompactExtrinsic<Address, Nonce, Call, Ed25519Signature>;
+pub type UncheckedExtrinsic =
+	generic::UncheckedMortalCompactExtrinsic<Address, Nonce, Call, Ed25519Signature>;
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, Nonce, Call>;
 /// Executive: handles dispatch to the various modules.

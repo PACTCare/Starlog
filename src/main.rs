@@ -4,10 +4,10 @@
 #![warn(unused_extern_crates)]
 
 mod chain_spec;
-mod service;
 mod cli;
+mod service;
 
-pub use substrate_cli::{VersionInfo, IntoExit, error};
+pub use substrate_cli::{error, IntoExit, VersionInfo};
 
 fn run() -> cli::error::Result<()> {
 	let version = VersionInfo {
@@ -17,7 +17,7 @@ fn run() -> cli::error::Result<()> {
 		executable_name: "starlog",
 		author: "David Hawig",
 		description: "IPFS Metadata Blockchain based on Substrate",
-		support_url: "support.anonymous.an",
+		support_url: "https://github.com/PACTCare/Starlog/issues",
 	};
 	cli::run(::std::env::args(), cli::Exit, version)
 }
