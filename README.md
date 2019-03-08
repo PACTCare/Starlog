@@ -36,7 +36,7 @@ Rather than trying to find one single truth directly on the blockchain (e.g., to
 <img src="https://pact.online/dist/img/sbs.png" width="650px" alt="subscription-based system ">
 This means Publishers store immutable metadata and unavailability data on the chain. Consumers can decide which publishers (signatures) they trust and follow. In practice, this will be automatically archived by rules hard-coded into the interface (e.g., dweb.page). The benefit of the system is the immediate availability of information without the requirement of an additional voting system nor a filtering system, which takes individual preferences into account. 
 
-Currently, a slightly changed file (version) results in a completely new hash on IPFS. However, since this new version might still have the same metadata, it makes sense to store references to metadata objects to reduce the overall chain size. An off-chain storage of metadata is probably not a solution, because of the initial loading speed. 
+Since a slightly changed file (version) results in a completely new hash on IPFS but still might have the same metadata, it makes sense to store references to metadata objects to reduce the overall chain size. An off-chain storage of metadata is probably not a solution, because of the initial loading speed. 
 
 ## Install
 
