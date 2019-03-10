@@ -49,9 +49,13 @@ pub type BlockNumber = u64;
 pub type Nonce = u64;
 
 /// Import starlog runtimes
-mod metadata;
+mod rt_metadata;
 
-mod unavailability;
+mod rt_unavailability;
+
+mod ipfs_hashes;
+
+mod metadata;
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
 /// the specifics of the runtime. They can then be made to be agnostic over specific formats
@@ -180,11 +184,11 @@ impl sudo::Trait for Runtime {
 	type Proposal = Call;
 }
 
-impl metadata::Trait for Runtime {
+impl rt_metadata::Trait for Runtime {
 	type Event = Event;
 }
 
-impl unavailability::Trait for Runtime {
+impl rt_unavailability::Trait for Runtime {
 	type Event = Event;
 }
 
@@ -202,8 +206,8 @@ construct_runtime!(
 		Balances: balances,
 		Sudo: sudo,
 		Fees: fees::{Module, Storage, Config<T>, Event<T>},
-		Metadata: metadata::{Module, Call, Storage, Event<T>},
-		Unavailable: unavailability::{Module,Call,Storage, Event<T>},
+		Metadata: rt_metadata::{Module, Call, Storage, Event<T>},
+		Unavailable: rt_unavailability::{Module,Call,Storage, Event<T>},
 	}
 );
 

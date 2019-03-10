@@ -1,9 +1,12 @@
-/// Availibility runtim
+//! Availibility runtim
 use rstd::vec::Vec;
 use support::{decl_event, decl_module, decl_storage, dispatch::Result, ensure, StorageMap};
 use system::ensure_signed;
 
-const ERR_NO_VALID_HASH: &str = "Not a valid IPFS Hash";
+use super::ipfs_hashes;
+
+const ERR_NO_NA_ENTRY: &str = "No unavailibility entry";
+const ERR_ALREADY_MARKET: &str = "Already market as unvailable";
 const ERR_OVERFLOW: &str = "Overflow adding new unavailibility data";
 
 pub trait Trait: balances::Trait {
@@ -15,6 +18,7 @@ decl_storage! {
         // Subscribtion based system load availibility information by accountId
         UnavailabledataArray get(unavailable_data_by_index): map (T::AccountId, u64) => Vec<u8>;
         UnavailabledataCount get(user_unavailable_count): map T::AccountId => u64;
+        UnavailabledataHashCount get(user_unavailable_hash_count): map (T::AccountId, Vec<u8>) => u64;
     }
 }
 
@@ -24,37 +28,30 @@ decl_module! {
 
         pub fn mark_as_unavailable(origin, ipfs_hash: Vec<u8>) -> Result {
             let who = ensure_signed(origin)?;
-            const IPFS_SHA256_BASE58_LENGTH: usize = 46;
-            const IPFS_SHA256_BASE58_FIRST_BYTE: u8 = 81; // = Q
-            const IPFS_SHA256_BASE58_SECOND_BYTE: u8 = 109; // = m
+            ipfs_hashes::check_valid_hash(&ipfs_hash)?;
 
-            ensure!(
-                ipfs_hash.len() == IPFS_SHA256_BASE58_LENGTH,
-                ERR_NO_VALID_HASH
-            );
-            ensure!(
-                ipfs_hash[0] == IPFS_SHA256_BASE58_FIRST_BYTE,
-                ERR_NO_VALID_HASH
-            );
-            ensure!(
-                ipfs_hash[1] == IPFS_SHA256_BASE58_SECOND_BYTE,
-                ERR_NO_VALID_HASH
-            );
+            ensure!(!<UnavailabledataHashCount<T>>::exists((who.clone(),ipfs_hash.clone())), ERR_ALREADY_MARKET);
 
             let count = Self::user_unavailable_count(&who);
             let updated_count = count.checked_add(1).ok_or(ERR_OVERFLOW)?;
 
-            //TODO: only check if hash exists
+            <UnavailabledataHashCount<T>>::insert((who.clone(),ipfs_hash.clone()), &count);
             <UnavailabledataArray<T>>::insert((who.clone(), count), &ipfs_hash);
             <UnavailabledataCount<T>>::insert(&who, updated_count);
+
 
             Self::deposit_event(RawEvent::UnavailableStored(who, ipfs_hash));
             Ok(())
         }
 
-        //TODO:
+        //TODO: test
         pub fn remove_unavailable_entry(origin, ipfs_hash: Vec<u8>) -> Result {
             let sender = ensure_signed(origin)?;
+
+            ensure!(<UnavailabledataHashCount<T>>::exists((sender.clone(),ipfs_hash.clone())), ERR_NO_NA_ENTRY);
+            let count = Self::user_unavailable_hash_count((sender.clone(), ipfs_hash.clone()));
+
+            <UnavailabledataArray<T>>::remove((sender.clone(), count));
             Ok(())
         }
     }
@@ -105,6 +102,14 @@ mod tests {
         type Event = ();
         type Log = DigestItem;
     }
+
+    impl balances::Trait for Test {
+        type Balance = u64;
+        type OnFreeBalanceZero = ();
+        type OnNewAccount = ();
+        type EnsureAccountLiquid = ();
+        type Event = ();
+    }
     impl Trait for Test {
         type Event = ();
     }
@@ -121,13 +126,40 @@ mod tests {
     }
 
     #[test]
-    fn it_works_for_default_value() {
+    fn mark_as_unavailable_works() {
         with_externalities(&mut new_test_ext(), || {
-            // Just a dummy test for the dummy funtion `do_something`
-            // calling the `do_something` function with a value 42
-            assert_ok!(UnavailableStorage::do_something(Origin::signed(1), 42));
-            // asserting that the stored value is equal to what we stored
-            assert_eq!(UnavailableStorage::something(), Some(42));
+            let hash = vec![
+                81, 109, 97, 71, 54, 103, 67, 80, 72, 66, 75, 69, 118, 81, 116, 67, 84, 71, 55, 69,
+                76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
+                111, 110, 120, 70, 121, 100, 121,
+            ];
+            assert_ok!(UnavailableStorage::mark_as_unavailable(
+                Origin::signed(1),
+                hash.clone()
+            ));
+            // assert_eq!(
+            //     UnavailableStorage::user_unavailable_hash_count((Origin::signed(1), hash)),
+            //     0
+            // );
+        });
+    }
+
+    #[test]
+    fn remove_unavailable_entry_works() {
+        with_externalities(&mut new_test_ext(), || {
+            let hash = vec![
+                81, 109, 97, 71, 54, 103, 67, 80, 72, 66, 75, 69, 118, 81, 116, 67, 84, 71, 55, 69,
+                76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
+                111, 110, 120, 70, 121, 100, 121,
+            ];
+            assert_ok!(UnavailableStorage::mark_as_unavailable(
+                Origin::signed(1),
+                hash.clone()
+            ));
+            assert_ok!(UnavailableStorage::remove_unavailable_entry(
+                Origin::signed(1),
+                hash.clone()
+            ));
         });
     }
 }

@@ -4,6 +4,6 @@
         "time": "u64",
         "owner": "AccountId",
         "price": "Balance",
-        "meta_json": "Vec<u8>"
+        "meta_hash": "Hash"
     }
 }
