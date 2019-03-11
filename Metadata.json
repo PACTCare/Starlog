@@ -2,8 +2,9 @@
     "Metadata": {
         "ipfs_hash": "Vec<u8>",
         "time": "u64",
-        "owner": "AccountId",
+        "license_code": "u16",
         "price": "Balance",
+        "gateway": "Vec<u8>",
         "meta_hash": "Hash"
     }
 }

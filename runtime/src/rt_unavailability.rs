@@ -3,7 +3,7 @@ use rstd::vec::Vec;
 use support::{decl_event, decl_module, decl_storage, dispatch::Result, ensure, StorageMap};
 use system::ensure_signed;
 
-use super::ipfs_hashes;
+use super::metadata_checks;
 
 const ERR_NO_NA_ENTRY: &str = "No unavailibility entry";
 const ERR_ALREADY_MARKET: &str = "Already market as unvailable";
@@ -28,7 +28,7 @@ decl_module! {
 
         pub fn mark_as_unavailable(origin, ipfs_hash: Vec<u8>) -> Result {
             let who = ensure_signed(origin)?;
-            ipfs_hashes::check_valid_hash(&ipfs_hash)?;
+            metadata_checks::check_valid_hash(&ipfs_hash)?;
 
             ensure!(!<UnavailabledataHashCount<T>>::exists((who.clone(),ipfs_hash.clone())), ERR_ALREADY_MARKET);
 
