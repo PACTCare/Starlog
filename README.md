@@ -19,7 +19,7 @@ The goal of Starlog is to research and develop an open source solo chain or pote
 
 ## Background
 
-The project was initiated to improve [Dweb.page](https://github.com/PACTCare/Dweb.page/tree/starlog). That's why [Dweb.page](https://github.com/PACTCare/Dweb.page/tree/starlog) is used as a potential first user-interface/testing environment for Starlog (see image below). 
+The project was initiated to improve [Dweb.page](https://github.com/PACTCare/Dweb.page/tree/starlog). That's why [Dweb.page](https://github.com/PACTCare/Dweb.page/tree/starlog) is used as a potential first user-interface/testing environment for Starlog (see images below). 
 
 <img src="https://pact.online/dist/img/starlog1.PNG" width="310px" alt="Dweb.page + Starlog upload"> <img src="https://pact.online/dist/img/starlog2.PNG" width="310px" alt="Dweb.page + Starlog search">
 
@@ -31,7 +31,7 @@ However, Starlog could potentially be implemented in all kinds of IPFS projects.
 - Electronic identity based on personal IPFS uploads
 - Faster initial loading of non-distributed IPFS content
 
-Rather than trying to find one single truth directly on the blockchain (e.g., token-curated registry), the idea is to develop a subscription-based system (see images below). 
+Rather than trying to find one single truth directly on the blockchain (e.g., token-curated registry), the idea is to develop a subscription-based system (see image below). 
 
 <img src="https://pact.online/dist/img/sbs.png" width="650px" alt="subscription-based system ">
 This means Publishers store immutable metadata and unavailability data on the chain. Consumers can decide which publishers (signatures) they trust and follow. In practice, this will be automatically archived by rules hard-coded into the interface (e.g., dweb.page). The benefit of the system is the immediate availability of information without the requirement of an additional voting system nor a filtering system, which takes individual preferences into account. 
