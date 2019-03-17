@@ -4,19 +4,19 @@
 #![warn(unused_extern_crates)]
 
 mod chain_spec;
-mod cli;
 mod service;
+mod cli;
 
-pub use substrate_cli::{error, IntoExit, VersionInfo};
+pub use substrate_cli::{VersionInfo, IntoExit, error};
 
 fn run() -> cli::error::Result<()> {
 	let version = VersionInfo {
-		name: "Substrate Node",
+		name: "Starlog Node",
 		commit: env!("VERGEN_SHA_SHORT"),
 		version: env!("CARGO_PKG_VERSION"),
 		executable_name: "starlog",
 		author: "David Hawig",
-		description: "IPFS Metadata Blockchain based on Substrate",
+		description: "Metadata Blockchain based on Substrate",
 		support_url: "https://github.com/PACTCare/Starlog/issues",
 	};
 	cli::run(::std::env::args(), cli::Exit, version)

@@ -26,30 +26,30 @@ decl_module! {
     pub struct Module<T: Trait> for enum Call where origin: T::Origin {
         fn deposit_event<T>() = default;
 
-        pub fn mark_as_unavailable(origin, ipfs_hash: Vec<u8>) -> Result {
+        pub fn mark_as_unavailable(origin, file_hash: Vec<u8>) -> Result {
             let who = ensure_signed(origin)?;
-            metadata_checks::check_valid_hash(&ipfs_hash)?;
+            metadata_checks::check_valid_hash(&file_hash)?;
 
-            ensure!(!<UnavailabledataHashCount<T>>::exists((who.clone(),ipfs_hash.clone())), ERR_ALREADY_MARKET);
+            ensure!(!<UnavailabledataHashCount<T>>::exists((who.clone(),file_hash.clone())), ERR_ALREADY_MARKET);
 
             let count = Self::user_unavailable_count(&who);
             let updated_count = count.checked_add(1).ok_or(ERR_OVERFLOW)?;
 
-            <UnavailabledataHashCount<T>>::insert((who.clone(),ipfs_hash.clone()), &count);
-            <UnavailabledataArray<T>>::insert((who.clone(), count), &ipfs_hash);
+            <UnavailabledataHashCount<T>>::insert((who.clone(),file_hash.clone()), &count);
+            <UnavailabledataArray<T>>::insert((who.clone(), count), &file_hash);
             <UnavailabledataCount<T>>::insert(&who, updated_count);
 
 
-            Self::deposit_event(RawEvent::UnavailableStored(who, ipfs_hash));
+            Self::deposit_event(RawEvent::UnavailableStored(who, file_hash));
             Ok(())
         }
 
         //TODO: test
-        pub fn remove_unavailable_entry(origin, ipfs_hash: Vec<u8>) -> Result {
+        pub fn remove_unavailable_entry(origin, file_hash: Vec<u8>) -> Result {
             let sender = ensure_signed(origin)?;
 
-            ensure!(<UnavailabledataHashCount<T>>::exists((sender.clone(),ipfs_hash.clone())), ERR_NO_NA_ENTRY);
-            let count = Self::user_unavailable_hash_count((sender.clone(), ipfs_hash.clone()));
+            ensure!(<UnavailabledataHashCount<T>>::exists((sender.clone(),file_hash.clone())), ERR_NO_NA_ENTRY);
+            let count = Self::user_unavailable_hash_count((sender.clone(), file_hash.clone()));
 
             <UnavailabledataArray<T>>::remove((sender.clone(), count));
             Ok(())

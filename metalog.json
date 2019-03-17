@@ -1,7 +1,7 @@
 {
-    "Metadata": {
+    "Metalog": {
         "ipfs_hash": "Vec<u8>",
-        "time": "u64",
+        "time": "Moment",
         "license_code": "u16",
         "price": "Balance",
         "gateway": "Vec<u8>",

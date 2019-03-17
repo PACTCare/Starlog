@@ -3,41 +3,48 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(not(feature = "std"), feature(alloc))]
 // `construct_runtime!` does a lot of recursion and requires us to increase the limit to 256.
-#![recursion_limit = "256"]
+#![recursion_limit="256"]
 
-use client::{
-	block_builder::api::{self as block_builder_api, CheckInherentsResult, InherentData},
-	impl_runtime_apis, runtime_api,
-};
-use parity_codec_derive::{Decode, Encode};
+#[cfg(feature = "std")]
+use serde_derive::{Serialize, Deserialize};
+use parity_codec::{Encode, Decode};
+use rstd::prelude::*;
 #[cfg(feature = "std")]
 use primitives::bytes;
-use primitives::{Ed25519AuthorityId, OpaqueMetadata};
-use rstd::prelude::*;
+use primitives::{ed25519, OpaqueMetadata};
 use runtime_primitives::{
-	create_runtime_str, generic,
-	traits::{self, BlakeTwo256, Block as BlockT, StaticLookup},
-	transaction_validity::TransactionValidity,
-	ApplyResult, Ed25519Signature,
+	ApplyResult, transaction_validity::TransactionValidity, generic, create_runtime_str,
+	traits::{self, BlakeTwo256, Block as BlockT, StaticLookup, Verify}
 };
-#[cfg(feature = "std")]
-use serde_derive::{Deserialize, Serialize};
+use client::{
+	block_builder::api::{CheckInherentsResult, InherentData, self as block_builder_api},
+	runtime_api, impl_runtime_apis
+};
+use version::RuntimeVersion;
 #[cfg(feature = "std")]
 use version::NativeVersion;
-use version::RuntimeVersion;
 
 // A few exports that help ease life for downstream crates.
-pub use balances::Call as BalancesCall;
-pub use consensus::Call as ConsensusCall;
 #[cfg(any(feature = "std", test))]
 pub use runtime_primitives::BuildStorage;
-pub use runtime_primitives::{Perbill, Permill};
-pub use support::{construct_runtime, StorageValue};
-pub use timestamp::BlockPeriod;
+pub use consensus::Call as ConsensusCall;
 pub use timestamp::Call as TimestampCall;
+pub use balances::Call as BalancesCall;
+pub use runtime_primitives::{Permill, Perbill};
+pub use timestamp::BlockPeriod;
+pub use support::{StorageValue, construct_runtime};
 
-/// Alias to Ed25519 pubkey that identifies an account on the chain.
-pub type AccountId = primitives::H256;
+/// The type that is used for identifying authorities.
+pub type AuthorityId = <AuthoritySignature as Verify>::Signer;
+
+/// The type used by authorities to prove their ID.
+pub type AuthoritySignature = ed25519::Signature;
+
+/// Alias to pubkey that identifies an account on the chain.
+pub type AccountId = <AccountSignature as Verify>::Signer;
+
+/// The type used by authorities to prove their ID.
+pub type AccountSignature = ed25519::Signature;
 
 /// A hash of some data used by the chain.
 pub type Hash = primitives::H256;
@@ -65,21 +72,20 @@ pub mod opaque {
 	/// Opaque, encoded, unchecked extrinsic.
 	#[derive(PartialEq, Eq, Clone, Default, Encode, Decode)]
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize, Debug))]
-	pub struct UncheckedExtrinsic(#[cfg_attr(feature = "std", serde(with = "bytes"))] pub Vec<u8>);
+	pub struct UncheckedExtrinsic(#[cfg_attr(feature = "std", serde(with="bytes"))] pub Vec<u8>);
 	impl traits::Extrinsic for UncheckedExtrinsic {
 		fn is_signed(&self) -> Option<bool> {
 			None
 		}
 	}
 	/// Opaque block header type.
-	pub type Header =
-		generic::Header<BlockNumber, BlakeTwo256, generic::DigestItem<Hash, Ed25519AuthorityId>>;
+	pub type Header = generic::Header<BlockNumber, BlakeTwo256, generic::DigestItem<Hash, AuthorityId, AuthoritySignature>>;
 	/// Opaque block type.
 	pub type Block = generic::Block<Header, UncheckedExtrinsic>;
 	/// Opaque block identifier type.
 	pub type BlockId = generic::BlockId<Block>;
 	/// Opaque session key type.
-	pub type SessionKey = Ed25519AuthorityId;
+	pub type SessionKey = AuthorityId;
 }
 
 /// This runtime version.
@@ -132,7 +138,7 @@ impl aura::Trait for Runtime {
 
 impl consensus::Trait for Runtime {
 	/// The identifier we use to refer to authorities.
-	type SessionKey = Ed25519AuthorityId;
+	type SessionKey = AuthorityId;
 	// The aura module handles offline-reports internally
 	// rather than using an explicit report system.
 	type InherentOfflineReport = ();
@@ -165,8 +171,6 @@ impl balances::Trait for Runtime {
 	type OnFreeBalanceZero = ();
 	/// What to do if a new account is created.
 	type OnNewAccount = Indices;
-	/// Restrict whether an account can transfer funds. We don't place any further restrictions.
-	type EnsureAccountLiquid = ();
 	/// The uniquitous event type.
 	type Event = Event;
 }
@@ -190,8 +194,9 @@ impl rt_unavailability::Trait for Runtime {
 	type Event = Event;
 }
 
+
 construct_runtime!(
-	pub enum Runtime with Log(InternalLog: DigestItem<Hash, Ed25519AuthorityId>) where
+	pub enum Runtime with Log(InternalLog: DigestItem<Hash, AuthorityId, AuthoritySignature>) where
 		Block = Block,
 		NodeBlock = opaque::Block,
 		UncheckedExtrinsic = UncheckedExtrinsic
@@ -220,8 +225,7 @@ pub type Block = generic::Block<Header, UncheckedExtrinsic>;
 /// BlockId type as expected by this runtime.
 pub type BlockId = generic::BlockId<Block>;
 /// Unchecked extrinsic type as expected by this runtime.
-pub type UncheckedExtrinsic =
-	generic::UncheckedMortalCompactExtrinsic<Address, Nonce, Call, Ed25519Signature>;
+pub type UncheckedExtrinsic = generic::UncheckedMortalCompactExtrinsic<Address, Nonce, Call, AccountSignature>;
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, Nonce, Call>;
 /// Executive: handles dispatch to the various modules.
@@ -234,7 +238,7 @@ impl_runtime_apis! {
 			VERSION
 		}
 
-		fn authorities() -> Vec<Ed25519AuthorityId> {
+		fn authorities() -> Vec<AuthorityId> {
 			Consensus::authorities()
 		}
 

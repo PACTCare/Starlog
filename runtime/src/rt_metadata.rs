@@ -1,21 +1,27 @@
 //! Metadata runtim
 use super::metadata_checks;
-use parity_codec_derive::{Decode, Encode};
+use parity_codec::{Encode, Decode};
 use rstd::vec::Vec;
-use runtime_primitives::traits::{Hash, Zero};
+use runtime_primitives::traits::Zero;
 use support::{
 	decl_event, decl_module, decl_storage, dispatch::Result, ensure, StorageMap, StorageValue,
 };
 use system::ensure_signed;
+
+// TODO: support more than just IPFS
+
+// TODO: resources used == price paid
 
 // TODO: multiple owners = multiple signatures system
 // https://github.com/paritytech/substrate/pull/1795
 // multi signature system can search for groups
 
 const ERR_HASH_NOT_EXIST: &str = "This hash does not exist";
-const ERR_ALREADY_CLAIMED: &str = "This IPFS hash has already been claimed";
+const ERR_ALREADY_CLAIMED: &str = "This hash has already been claimed";
+const ERR_DIFFERENT_HASHES: &str = "The file and meta hash cannot be the same";
 
 const ERR_PRICE_NOT_ZERO: &str = "Free to use content needs to have a price of zero";
+const ERR_INVALID_LICENSE: &str = "Invalid license code";
 
 const ERR_ALREADY_OWNER: &str = "You are already the owner of this hash.";
 const ERR_NOT_OWNER: &str = "You are not the owner";
@@ -29,17 +35,22 @@ pub trait Trait: timestamp::Trait + balances::Trait {
 	type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
 }
 
+// Key requirment for metadata entry it's not only hosted locally!
 #[derive(Debug, Encode, Decode, Default, Clone, PartialEq)]
-pub struct Metadata<Time, Balance, Hash> {
-	pub ipfs_hash: Vec<u8>,
+pub struct Metalog<Time, Price> {
+	pub file_hash: Vec<u8>,
 	pub time: Time,
-	pub license_code: u16, // 0 = Copyright, 1 = free licence, TODO: add more
-	pub price: Balance,    // price 0 not for sale
-	pub gateway: Vec<u8>,  // gateway which pins the file or stores the initial upload
-	pub meta_hash: Hash,   // https://blog.enjincoin.io/erc-1155-the-crypto-item-standard-ac9cf1c5a226
+	pub license_code: u16, // 0 = Copyright, 1 = free licence, 2 = Delete in network, 3 = Private, store only on one gateway  TODO: add more
+	pub price: Price,      // price 0 not for sale
+	pub gateway: Vec<u8>,  // gateway which pins the file (as well as the metadata?)
+	pub meta_hash: Vec<u8>, // or https://github.com/multiformats/multiaddr
+	                       // ERC721 Metadata JSON Schema
+	                       // https://medium.com/blockchain-manchester/erc-721-metadata-standards-and-ipfs-94b01fea2a89
 	                       // Contains tag, text, title, filetype as Vec<u8>?
 	                       // searchable?
 	                       // because storing an additional metadata hash on IPFS is probably too slow
+	                       // unless you load metadata via the location based system!
+	                       // https://github.com/mit-pdos/noria
 }
 
 decl_storage! {
@@ -47,19 +58,20 @@ decl_storage! {
 		//TODO: Is there a better solution for query for metadata without subscription
 		MetadataArray get(metadata_by_index): map u64 => Vec<u8>;
 
-		//TODO: what happens if multipe transactions at the same time?
-		//integrate some way to make things parallel, see riot
+		// TODO: what happens if multipe transactions at the same time?
+		// integrate some way to make things parallel, see riot
+		// idea income first block and assign count during second block
 		MetadataCount get(metadata_count): u64;
 		MetadataIndex: map Vec<u8> => u64;
 
-		MetaHash get(meta_of_metahash): map T::Hash => Vec<u8>;
+		MetaHash get(metahash): map Vec<u8> => Vec<u8>;
 
-		OwnedMetaArray get(metadata_of_user_by_index): map (T::AccountId, u64) => Metadata<T::Moment, T::Balance, T::Hash>;
+		OwnedMetaArray get(metadata_of_user_by_index): map (T::AccountId, u64) => Metalog<T::Moment, T::Balance>;
 		OwnedMetaCount get(user_meta_count): map T::AccountId => u64;
 		OwnedMetaIndex: map Vec<u8> => u64;
 
-		HashMeta get(meta_for_hash): map Vec<u8> => Metadata<T::Moment, T::Balance, T::Hash>;
-		HashOwner get(owner_of_hash): map Vec<u8> => Option<T::AccountId>;
+		FileHashMeta get(meta_for_hash): map Vec<u8> => Metalog<T::Moment, T::Balance>;
+		FileHashOwner get(owner_of_hash): map Vec<u8> => Option<T::AccountId>;
 	}
 }
 
@@ -68,27 +80,35 @@ decl_module! {
 		fn deposit_event<T>() = default;
 
 		/// Store metadata
-		pub fn store_meta(origin, ipfs_hash: Vec<u8>, license_code: u16, price: T::Balance, gateway: Vec<u8>, meta_json: Vec<u8>) -> Result {
+		pub fn store_meta(origin,
+			file_hash: Vec<u8>,
+			license_code: u16,
+			price: T::Balance,
+			gateway: Vec<u8>,
+			meta_hash: Vec<u8>) -> Result {
 			let sender = ensure_signed(origin)?;
-			metadata_checks::check_valid_hash(&ipfs_hash)?;
-			metadata_checks::check_valid_meta(&meta_json)?;
+			metadata_checks::check_valid_hash(&file_hash)?;
+			metadata_checks::check_valid_hash(&meta_hash)?;
 			metadata_checks::check_valid_gateway(&gateway)?;
 
-			ensure!(!<HashOwner<T>>::exists(&ipfs_hash), ERR_ALREADY_CLAIMED);
+			ensure!(file_hash != meta_hash, ERR)
+			ensure!(!<FileHashOwner<T>>::exists(&file_hash), ERR_ALREADY_CLAIMED);
 
 			if license_code == 1 {
 				ensure!(price.is_zero(), ERR_PRICE_NOT_ZERO);
 			}
-			//hashing of metadata to reduce the size of the chain
-			let meta_hash = <T as system::Trait>::Hashing::hash_of(&meta_json);
+
+			//Initial upload can't have the delete license_code
+			ensure!(license_code != 2, ERR_INVALID_LICENSE);
+
 			//if doesn't exist create metadata entry
 			if !<MetaHash<T>>::exists(&meta_hash) {
-				<MetaHash<T>>::insert(&meta_hash, &meta_json);
+				<MetaHash<T>>::insert(&meta_hash, &meta_hash);
 			}
 
 			let time = <timestamp::Module<T>>::now();
-			let new_metadata = Metadata {
-				ipfs_hash,
+			let new_metadata = Metalog {
+				file_hash,
 				time,
 				license_code,
 				price,
@@ -97,74 +117,74 @@ decl_module! {
 			};
 
 			Self::_user_store(sender.clone(), new_metadata.clone())?;
-			Self::deposit_event(RawEvent::Stored(sender, new_metadata.time, new_metadata.ipfs_hash));
+			Self::deposit_event(RawEvent::Stored(sender, new_metadata.time, new_metadata.file_hash));
 			Ok(())
 		}
 
 		//TODO: claim ownership?
 
 		/// Transfer the ownership without paying for it
-		fn transfer_ownership(origin, receiver: T::AccountId, ipfs_hash: Vec<u8>) -> Result {
+		fn transfer_ownership(origin, receiver: T::AccountId, file_hash: Vec<u8>) -> Result {
 			let sender = ensure_signed(origin)?;
-			Self::_check_ownership_rights(sender.clone(), &ipfs_hash)?;
-			Self::_transfer(sender.clone(), receiver.clone(), &ipfs_hash)?;
+			Self::_check_ownership_rights(sender.clone(), &file_hash)?;
+			Self::_transfer(sender.clone(), receiver.clone(), &file_hash)?;
 
-			Self::deposit_event(RawEvent::TransferOwnership(sender, receiver, ipfs_hash));
+			Self::deposit_event(RawEvent::TransferOwnership(sender, receiver, file_hash));
 			Ok(())
 		}
 
 		/// Change gateway
-		pub fn change_gateway(origin, ipfs_hash: Vec<u8>, gateway: Vec<u8>)-> Result{
+		pub fn change_gateway(origin, file_hash: Vec<u8>, gateway: Vec<u8>)-> Result{
 			let sender = ensure_signed(origin)?;
 			metadata_checks::check_valid_gateway(&gateway)?;
-			Self::_check_ownership_rights(sender.clone(), &ipfs_hash)?;
-			let mut metadata = Self::meta_for_hash(&ipfs_hash);
+			Self::_check_ownership_rights(sender.clone(), &file_hash)?;
+			let mut metadata = Self::meta_for_hash(&file_hash);
 			metadata.gateway = gateway.clone();
 
-			let meta_index = <OwnedMetaIndex<T>>::get(&ipfs_hash);
+			let meta_index = <OwnedMetaIndex<T>>::get(&file_hash);
 			<OwnedMetaArray<T>>::insert((sender.clone(), meta_index -1), &metadata);
-			<HashMeta<T>>::insert(&ipfs_hash, &metadata);
+			<FileHashMeta<T>>::insert(&file_hash, &metadata);
 
-			Self::deposit_event(RawEvent::GatewaySet(sender, ipfs_hash, gateway));
+			Self::deposit_event(RawEvent::GatewaySet(sender, file_hash, gateway));
 			Ok(())
 		}
 
 		/// Change the price
-		fn change_price(origin, ipfs_hash: Vec<u8>, price: T::Balance) -> Result {
+		fn change_price(origin, file_hash: Vec<u8>, price: T::Balance) -> Result {
 			let sender = ensure_signed(origin)?;
-			Self::_check_ownership_rights(sender.clone(), &ipfs_hash)?;
+			Self::_check_ownership_rights(sender.clone(), &file_hash)?;
 
-			let mut metadata = Self::meta_for_hash(&ipfs_hash);
+			let mut metadata = Self::meta_for_hash(&file_hash);
 			//once open source = forever open source
 			ensure!(metadata.license_code != 1, ERR_PRICE_NOT_ZERO);
 
 			metadata.price = price;
 
-			let meta_index = <OwnedMetaIndex<T>>::get(&ipfs_hash);
+			let meta_index = <OwnedMetaIndex<T>>::get(&file_hash);
 			<OwnedMetaArray<T>>::insert((sender.clone(), meta_index -1), &metadata);
-			<HashMeta<T>>::insert(&ipfs_hash, metadata);
+			<FileHashMeta<T>>::insert(&file_hash, metadata);
 
-			Self::deposit_event(RawEvent::PriceSet(sender, ipfs_hash, price));
+			Self::deposit_event(RawEvent::PriceSet(sender, file_hash, price));
 			Ok(())
 		}
 
 		//TODO: change metadata?
 
-		fn buy_meta(origin, ipfs_hash: Vec<u8>, new_owner: T::AccountId) -> Result {
+		fn buy_meta(origin, file_hash: Vec<u8>, new_owner: T::AccountId) -> Result {
 			let sender = ensure_signed(origin)?;
-			ensure!(<HashMeta<T>>::exists(&ipfs_hash), ERR_HASH_NOT_EXIST);
+			ensure!(<FileHashMeta<T>>::exists(&file_hash), ERR_HASH_NOT_EXIST);
 
-			let owner = Self::owner_of_hash(&ipfs_hash).ok_or(ERR_NO_OWNER)?;
+			let owner = Self::owner_of_hash(&file_hash).ok_or(ERR_NO_OWNER)?;
 			ensure!(owner != sender, ERR_ALREADY_OWNER );
 
-			let metadata = Self::meta_for_hash(&ipfs_hash);
+			let metadata = Self::meta_for_hash(&file_hash);
 			let price = metadata.price;
 			ensure!(!price.is_zero(), ERR_NOT_FOR_SALE);
 			 <balances::Module<T>>::make_transfer(&sender, &owner, price)?;
 
-			Self::_transfer(owner.clone(), new_owner, &ipfs_hash)?;
+			Self::_transfer(owner.clone(), new_owner, &file_hash)?;
 
-			Self::deposit_event(RawEvent::Bought(sender, owner, price, ipfs_hash));
+			Self::deposit_event(RawEvent::Bought(sender, owner, price, file_hash));
 			Ok(())
 		}
 	}
@@ -186,33 +206,33 @@ decl_event!(
 );
 
 impl<T: Trait> Module<T> {
-	/// Checks the ownership rights, no need for an additional ipfs hash check
-	fn _check_ownership_rights(sender: T::AccountId, ipfs_hash: &Vec<u8>) -> Result {
-		ensure!(<HashMeta<T>>::exists(ipfs_hash), ERR_HASH_NOT_EXIST);
-		let owner = Self::owner_of_hash(ipfs_hash).ok_or(ERR_NO_OWNER)?;
+	/// Checks the ownership rights, no need for an additional hash check
+	fn _check_ownership_rights(sender: T::AccountId, file_hash: &Vec<u8>) -> Result {
+		ensure!(<FileHashMeta<T>>::exists(file_hash), ERR_HASH_NOT_EXIST);
+		let owner = Self::owner_of_hash(file_hash).ok_or(ERR_NO_OWNER)?;
 		ensure!(owner == sender, ERR_NOT_OWNER);
 
 		Ok(())
 	}
 
-	fn _transfer(sender: T::AccountId, receiver: T::AccountId, ipfs_hash: &Vec<u8>) -> Result {
+	fn _transfer(sender: T::AccountId, receiver: T::AccountId, file_hash: &Vec<u8>) -> Result {
 		let receiver_total_count = Self::user_meta_count(&receiver);
 		let new_receiver_count = receiver_total_count.checked_add(1).ok_or(ERR_OVERFLOW)?;
 
 		let sender_total_count = Self::user_meta_count(&sender);
 		let new_sender_count = sender_total_count.checked_sub(1).ok_or(ERR_UNDERFLOW)?;
 
-		let meta_index = <OwnedMetaIndex<T>>::get(ipfs_hash);
+		let meta_index = <OwnedMetaIndex<T>>::get(file_hash);
 		let meta_object = <OwnedMetaArray<T>>::get((sender.clone(), new_sender_count));
 
 		if meta_index != new_sender_count {
 			<OwnedMetaArray<T>>::insert((sender.clone(), meta_index), &meta_object);
-			<OwnedMetaIndex<T>>::insert(&meta_object.ipfs_hash, meta_index);
+			<OwnedMetaIndex<T>>::insert(&meta_object.file_hash, meta_index);
 		}
 
-		<HashOwner<T>>::insert(ipfs_hash, &receiver);
+		<FileHashOwner<T>>::insert(file_hash, &receiver);
 
-		<OwnedMetaIndex<T>>::insert(ipfs_hash, receiver_total_count);
+		<OwnedMetaIndex<T>>::insert(file_hash, receiver_total_count);
 
 		<OwnedMetaArray<T>>::remove((sender.clone(), new_sender_count));
 		<OwnedMetaArray<T>>::insert((receiver.clone(), receiver_total_count), meta_object);
@@ -223,26 +243,23 @@ impl<T: Trait> Module<T> {
 		Ok(())
 	}
 
-	fn _user_store(
-		user: T::AccountId,
-		metadata: Metadata<T::Moment, T::Balance, T::Hash>,
-	) -> Result {
+	fn _user_store(user: T::AccountId, metadata: Metalog<T::Moment, T::Balance>) -> Result {
 		let count = Self::user_meta_count(&user);
 		let updated_count = count.checked_add(1).ok_or(ERR_OVERFLOW)?;
 
 		let metadata_count = Self::metadata_count();
 		let new_metadata_count = metadata_count.checked_add(1).ok_or(ERR_OVERFLOW)?;
 
-		<MetadataArray<T>>::insert(metadata_count, &metadata.ipfs_hash);
+		<MetadataArray<T>>::insert(metadata_count, &metadata.file_hash);
 		<MetadataCount<T>>::put(new_metadata_count);
-		<MetadataIndex<T>>::insert(&metadata.ipfs_hash, metadata_count);
+		<MetadataIndex<T>>::insert(&metadata.file_hash, metadata_count);
 
 		<OwnedMetaArray<T>>::insert((user.clone(), count), &metadata);
 		<OwnedMetaCount<T>>::insert(&user, updated_count);
-		<OwnedMetaIndex<T>>::insert(&metadata.ipfs_hash, updated_count);
+		<OwnedMetaIndex<T>>::insert(&metadata.file_hash, updated_count);
 
-		<HashMeta<T>>::insert(&metadata.ipfs_hash, &metadata);
-		<HashOwner<T>>::insert(&metadata.ipfs_hash, &user);
+		<FileHashMeta<T>>::insert(&metadata.file_hash, &metadata);
+		<FileHashOwner<T>>::insert(&metadata.file_hash, &user);
 
 		Ok(())
 	}
@@ -325,7 +342,6 @@ mod tests {
 				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
 				111, 110, 120, 70, 121, 100, 121,
 			];
-			let meta = vec![123, 116, 104, 105, 115, 125];
 			let gateway = vec![105, 112, 102, 115, 46, 105, 111];
 			assert_ok!(MetadataStorage::store_meta(
 				Origin::signed(20),
@@ -333,7 +349,7 @@ mod tests {
 				0,
 				4200,
 				gateway,
-				meta,
+				hash.clone(),
 			));
 			assert_eq!(MetadataStorage::owner_of_hash(hash), Some(20));
 		});
@@ -347,7 +363,6 @@ mod tests {
 				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
 				111, 110, 120, 70, 121, 100, 121,
 			];
-			let meta = vec![123, 116, 104, 105, 115, 125];
 			let gateway = vec![105, 112, 102, 115, 46, 105, 111];
 			assert_ok!(MetadataStorage::store_meta(
 				Origin::signed(20),
@@ -355,7 +370,7 @@ mod tests {
 				0,
 				4200,
 				gateway,
-				meta,
+				hash.clone(),
 			));
 			assert_ok!(MetadataStorage::change_price(
 				Origin::signed(20),
@@ -364,5 +379,4 @@ mod tests {
 			));
 		});
 	}
-
 }
