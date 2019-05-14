@@ -1,7 +1,7 @@
-use primitives::{ed25519, Pair};
-use node_template_runtime::{
+use primitives::{ed25519, sr25519, Pair};
+use starlog_runtime::{
 	AccountId, GenesisConfig, ConsensusConfig, TimestampConfig, BalancesConfig,
-	SudoConfig, IndicesConfig, FeesConfig,
+	SudoConfig, IndicesConfig,
 };
 use substrate_service;
 
@@ -10,7 +10,7 @@ use ed25519::Public as AuthorityId;
 // Note this is the URL for the telemetry server
 //const STAGING_TELEMETRY_URL: &str = "wss://telemetry.polkadot.io/submit/";
 
-/// Specialised `ChainSpec`. This is a specialisation of the general Substrate ChainSpec type.
+/// Specialized `ChainSpec`. This is a specialization of the general Substrate ChainSpec type.
 pub type ChainSpec = substrate_service::ChainSpec<GenesisConfig>;
 
 /// The chain specification option. This is expected to come in from the CLI and
@@ -31,7 +31,7 @@ fn authority_key(s: &str) -> AuthorityId {
 }
 
 fn account_key(s: &str) -> AccountId {
-	ed25519::Pair::from_string(&format!("//{}", s), None)
+	sr25519::Pair::from_string(&format!("//{}", s), None)
 		.expect("static values are valid; qed")
 		.public()
 }
@@ -93,17 +93,19 @@ impl Alternative {
 fn testnet_genesis(initial_authorities: Vec<AuthorityId>, endowed_accounts: Vec<AccountId>, root_key: AccountId) -> GenesisConfig {
 	GenesisConfig {
 		consensus: Some(ConsensusConfig {
-			code: include_bytes!("../runtime/wasm/target/wasm32-unknown-unknown/release/node_template_runtime_wasm.compact.wasm").to_vec(),
+			code: include_bytes!("../runtime/wasm/target/wasm32-unknown-unknown/release/starlog_runtime_wasm.compact.wasm").to_vec(),
 			authorities: initial_authorities.clone(),
 		}),
 		system: None,
 		timestamp: Some(TimestampConfig {
-			period: 5,					// 5 second block time.
+			minimum_period: 5, // 10 second block time.
 		}),
 		indices: Some(IndicesConfig {
 			ids: endowed_accounts.clone(),
 		}),
 		balances: Some(BalancesConfig {
+			transaction_base_fee: 1,
+			transaction_byte_fee: 0,
 			existential_deposit: 500,
 			transfer_fee: 0,
 			creation_fee: 0,
@@ -113,9 +115,5 @@ fn testnet_genesis(initial_authorities: Vec<AuthorityId>, endowed_accounts: Vec<
 		sudo: Some(SudoConfig {
 			key: root_key,
 		}),
-		fees: Some(FeesConfig {
-			transaction_base_fee: 1,
-			transaction_byte_fee: 0,
-		})
 	}
 }

@@ -1,10 +1,9 @@
 {
     "Metalog": {
-        "ipfs_hash": "Vec<u8>",
-        "time": "Moment",
+        "did": "Vec<u8>",
+        "unique_name": "Vec<u8>",
         "license_code": "u16",
-        "price": "Balance",
-        "gateway": "Vec<u8>",
-        "meta_hash": "Hash"
+        "storage_location": "Vec<u8>",
+        "time": "Moment"
     }
 }

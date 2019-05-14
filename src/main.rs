@@ -15,8 +15,8 @@ fn run() -> cli::error::Result<()> {
 		commit: env!("VERGEN_SHA_SHORT"),
 		version: env!("CARGO_PKG_VERSION"),
 		executable_name: "starlog",
-		author: "David Hawig",
-		description: "Metadata Blockchain based on Substrate",
+		author: "pact",
+		description: "Metadata Blockchain",
 		support_url: "https://github.com/PACTCare/Starlog/issues",
 	};
 	cli::run(::std::env::args(), cli::Exit, version)
