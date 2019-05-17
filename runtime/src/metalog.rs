@@ -20,6 +20,12 @@ const ERR_NOT_OWNER: &str = "You are not the owner";
 
 const ERR_OPEN_NAME_ACCOUNT_CLAIMED: &str = "Unique name account already claimed";
 
+const ERR_BYTEARRAY_LIMIT: &str = "Bytearray is too large";
+
+const BYTEARRAY_LIMIT_DID: usize = 80;
+const BYTEARRAY_LIMIT_LOCATION: usize = 80;
+const BYTEARRAY_LIMIT_NAME: usize = 40;
+
 const DELETE_LICENSE: u16 = 1;
 
 /// The module's configuration traits are timestamp and balance
@@ -28,31 +34,35 @@ pub trait Trait: timestamp::Trait + balances::Trait {
 }
 
 /// Key metalog struct
+//TODO: Vec<u8> max length?
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 #[cfg_attr(feature = "std", derive(Debug))]
 pub struct Metalog<Time> {
 	pub did: Vec<u8>, //= primary key, can't be changed
-	pub unique_name: Vec<u8>, // TODO: is it allowed to be zero?
+	pub unique_name: Vec<u8>, // Default = 0
 	pub license_code: u16, // 0 = no license code, 1 = delete request     
 	pub storage_location: Vec<u8>,  
 	pub time: Time,
 }
 
 decl_storage! {
-	trait Store for Module<T: Trait> as MetalogModule {
-		//TODO: add comments for everything
+	trait Store for Module<T: Trait> as Metalog {
 		/// Array of personal owned metalog data
 		OwnedMetaArray get(metadata_of_owner_by_index): map (T::AccountId, u64) => Metalog<T::Moment>;
+
+		/// Number of stored metalogs per account 
 		OwnedMetaCount get(owner_meta_count): map T::AccountId => u64;
+
+		/// Index of DID
 		OwnedMetaIndex: map Vec<u8> => u64;
 
 		/// Query for unique names
-		UNMeta get(meta_of_un): map Vec<u8> => Metalog<T::Moment>;
-		UNOwner get(owner_of_un): map Vec<u8> => Option<T::AccountId>;
+		UnMeta get(meta_of_un): map Vec<u8> => Metalog<T::Moment>;
+		UnOwner get(owner_of_un): map Vec<u8> => Option<T::AccountId>;
 
 		/// Query by DIDs 
-		DIDMeta get(meta_of_did): map Vec<u8> => Metalog<T::Moment>;
-		DIDOwner get(owner_of_did): map Vec<u8> => Option<T::AccountId>;
+		DidMeta get(meta_of_did): map Vec<u8> => Metalog<T::Moment>;
+		DidOwner get(owner_of_did): map Vec<u8> => Option<T::AccountId>;
 
 		/// Account which gets all the money for the unique name
 		UniqueNameAccount get(unique_name_account): T::AccountId;
@@ -73,32 +83,29 @@ decl_module! {
 			Ok(())
 		}
 
-		/// Store initial metadata
+		/// Store initial metalog
         fn create_metalog(
 			origin, 
 			did: Vec<u8>, 
-			unique_name: Vec<u8>, 
 			license_code: u16, 
 			storage_location: Vec<u8>) -> Result {
 
             let sender = ensure_signed(origin)?;
 
-			ensure!(!<DIDOwner<T>>::exists(&did), ERR_DID_ALREADY_CLAIMED);
+			ensure!(did.len() <= BYTEARRAY_LIMIT_DID, ERR_BYTEARRAY_LIMIT);
+			ensure!(storage_location.len() <= BYTEARRAY_LIMIT_LOCATION, ERR_BYTEARRAY_LIMIT);
+
+			ensure!(!<DidOwner<T>>::exists(&did), ERR_DID_ALREADY_CLAIMED);
 			
 			ensure!(license_code != DELETE_LICENSE, ERR_LICENSE_INVALID);
 
-			// if not null, also charge for it
-			let mut vect = Vec::new();
-			vect.push(0);
-			if unique_name != vect {
-				ensure!(!<UNOwner<T>>::exists(&unique_name), ERR_UN_ALREADY_CLAIMED);
-				Self::_pay_name(sender.clone())?;
-			}
-
 			let time = <timestamp::Module<T>>::now();
+
+			let mut default_name = Vec::new();
+			default_name.push(0);
 			let new_metadata = Metalog {
 				did,
-				unique_name,
+				unique_name: default_name, 
 				license_code,
 				storage_location,
 				time,
@@ -109,13 +116,38 @@ decl_module! {
             Ok(())
         }
 
-		/// Transfer the ownership without paying for it
+		/// Transfer the ownership, Payment will be implemented in smart contracts
 		fn transfer_ownership(origin, receiver: T::AccountId, did: Vec<u8>) -> Result {
 			let sender = ensure_signed(origin)?;
 			Self::_check_did_ownership(sender.clone(), &did)?;
 			Self::_transfer(sender.clone(), receiver.clone(), &did)?;
 
 			Self::deposit_event(RawEvent::TransferOwnership(sender, receiver, did));
+			Ok(())
+		}
+
+		/// Buy a unique name
+		pub fn buy_unique_name(origin, did: Vec<u8>, unique_name: Vec<u8>)-> Result{
+			let sender = ensure_signed(origin)?;
+
+			Self::_check_did_ownership(sender.clone(), &did)?;
+
+			ensure!(did.len() <= BYTEARRAY_LIMIT_NAME, ERR_BYTEARRAY_LIMIT);
+
+			ensure!(!<UnOwner<T>>::exists(&unique_name), ERR_UN_ALREADY_CLAIMED);
+			Self::_pay_name(sender.clone())?;
+
+			let mut metalog = Self::meta_of_did(&did);
+			metalog.unique_name = unique_name.clone();
+
+			let meta_index = <OwnedMetaIndex<T>>::get(&did);
+			<OwnedMetaArray<T>>::insert((sender.clone(), meta_index -1), &metalog);
+			<DidMeta<T>>::insert(&did, &metalog);
+
+			<UnMeta<T>>::insert(&metalog.unique_name, &metalog);
+			<UnOwner<T>>::insert(&metalog.unique_name, &sender);
+			
+			Self::deposit_event(RawEvent::NameUpdated(sender, did, unique_name));
 			Ok(())
 		}
 
@@ -129,7 +161,7 @@ decl_module! {
 
 			let meta_index = <OwnedMetaIndex<T>>::get(&did);
 			<OwnedMetaArray<T>>::insert((sender.clone(), meta_index -1), &metadata);
-			<DIDMeta<T>>::insert(&did, &metadata);
+			<DidMeta<T>>::insert(&did, &metadata);
 
 			Self::deposit_event(RawEvent::LicenseUpdated(sender, did, license_code));
 			Ok(())
@@ -139,40 +171,19 @@ decl_module! {
 		pub fn change_storage_location(origin, did: Vec<u8>, storage_location: Vec<u8>)-> Result{
 			let sender = ensure_signed(origin)?;
 
+			ensure!(did.len() <= BYTEARRAY_LIMIT_LOCATION, ERR_BYTEARRAY_LIMIT);
+
 			Self::_check_did_ownership(sender.clone(), &did)?;
 			let mut metadata = Self::meta_of_did(&did);
 			metadata.storage_location = storage_location.clone();
 
 			let meta_index = <OwnedMetaIndex<T>>::get(&did);
 			<OwnedMetaArray<T>>::insert((sender.clone(), meta_index -1), &metadata);
-			<DIDMeta<T>>::insert(&did, &metadata);
+			<DidMeta<T>>::insert(&did, &metadata);
 
 			Self::deposit_event(RawEvent::LocationUpdated(sender, did, storage_location));
 			Ok(())
 		}
-
-		/// Change unique name
-		//  TODO: UNMeta
-		pub fn change_unique_name(origin, did: Vec<u8>, unique_name: Vec<u8>)-> Result{
-			let sender = ensure_signed(origin)?;
-
-			Self::_check_did_ownership(sender.clone(), &did)?;
-
-			ensure!(!<UNOwner<T>>::exists(&unique_name), ERR_UN_ALREADY_CLAIMED);
-
-			Self::_pay_name(sender.clone())?;
-
-			let mut metadata = Self::meta_of_did(&did);
-			metadata.unique_name = unique_name.clone();
-
-			let meta_index = <OwnedMetaIndex<T>>::get(&did);
-			<OwnedMetaArray<T>>::insert((sender.clone(), meta_index -1), &metadata);
-			<DIDMeta<T>>::insert(&did, &metadata);
-			
-			Self::deposit_event(RawEvent::NameUpdated(sender, did, unique_name));
-			Ok(())
-		}
-
 	}
 }
 
@@ -191,26 +202,23 @@ decl_event!(
 
 impl<T: Trait> Module<T> { 
 	/// store metalog
-	fn _owner_store(user: T::AccountId, metalog: Metalog<T::Moment>) -> Result {
-		let count = Self::owner_meta_count(&user);
+	fn _owner_store(sender: T::AccountId, metalog: Metalog<T::Moment>) -> Result {
+		let count = Self::owner_meta_count(&sender);
 		let updated_count = count.checked_add(1).ok_or(ERR_OVERFLOW)?;
 
-		<OwnedMetaArray<T>>::insert((user.clone(), count), &metalog);
-		<OwnedMetaCount<T>>::insert(&user, updated_count);
+		<OwnedMetaArray<T>>::insert((sender.clone(), count), &metalog);
+		<OwnedMetaCount<T>>::insert(&sender, updated_count);
 		<OwnedMetaIndex<T>>::insert(&metalog.did, updated_count);
 
-		<UNMeta<T>>::insert(&metalog.did, &metalog);
-		<UNOwner<T>>::insert(&metalog.did, &user);
-
-		<DIDMeta<T>>::insert(&metalog.did, &metalog);
-		<DIDOwner<T>>::insert(&metalog.did, &user);
+		<DidMeta<T>>::insert(&metalog.did, &metalog);
+		<DidOwner<T>>::insert(&metalog.did, &sender);
 
 		Ok(())
 	}
 
 	/// Checks the ownership rights
 	fn _check_did_ownership(sender: T::AccountId, did: &Vec<u8>) -> Result {
-		ensure!(<DIDMeta<T>>::exists(did), ERR_DID_NOT_EXIST);
+		ensure!(<DidMeta<T>>::exists(did), ERR_DID_NOT_EXIST);
 		let owner = Self::owner_of_did(did).ok_or(ERR_DID_NO_OWNER)?;
 		ensure!(owner == sender, ERR_NOT_OWNER);
 
@@ -233,8 +241,14 @@ impl<T: Trait> Module<T> {
 			<OwnedMetaIndex<T>>::insert(&meta_object.did, meta_index);
 		}
 
-		// TODO: handle all DID and UN cases
-		<DIDOwner<T>>::insert(did, &receiver);
+		// if un is not the default un
+		let mut default_name = Vec::new();
+		default_name.push(0);
+		if meta_object.unique_name != default_name {
+			<UnOwner<T>>::insert(did, &receiver);
+		}
+
+		<DidOwner<T>>::insert(did, &receiver);
 
 		<OwnedMetaIndex<T>>::insert(did, receiver_total_count);
 
@@ -317,7 +331,7 @@ mod tests {
 		type Event = ();
 	}
 
-	type MetalogModule = Module<Test>;
+	type Metalog = Module<Test>;
 
 	fn new_test_ext() -> runtime_io::TestExternalities<Blake2Hasher> {
 		system::GenesisConfig::<Test>::default()
@@ -336,14 +350,14 @@ mod tests {
 				111, 110, 120, 70, 121, 100, 121,
 			];
 			let storage_location = vec![105, 112, 102, 115, 46, 105, 111];
-			assert_ok!(MetalogModule::create_metalog(
+			assert_ok!(Metalog::create_metalog(
 				Origin::signed(20),
 				did.clone(),
 				did.clone(),
 				0,
 				did.clone(),
 			));
-			assert_eq!(MetalogModule::owner_of_did(did), Some(20));
+			assert_eq!(Metalog::owner_of_did(did), Some(20));
 		});
 	}
 }
