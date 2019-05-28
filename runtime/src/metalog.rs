@@ -22,9 +22,9 @@ const ERR_OPEN_NAME_ACCOUNT_CLAIMED: &str = "Unique name account already claimed
 
 const ERR_BYTEARRAY_LIMIT: &str = "Bytearray is too large";
 
-const BYTEARRAY_LIMIT_DID: usize = 80;
-const BYTEARRAY_LIMIT_LOCATION: usize = 80;
-const BYTEARRAY_LIMIT_NAME: usize = 40;
+const BYTEARRAY_LIMIT_DID: usize = 100;
+const BYTEARRAY_LIMIT_LOCATION: usize = 100;
+const BYTEARRAY_LIMIT_NAME: usize = 50;
 
 const DELETE_LICENSE: u16 = 1;
 
@@ -76,6 +76,7 @@ decl_module! {
 		fn deposit_event<T>() = default;
 
 		/// Initialize unique name account
+		// TODO: move to config		
 		pub fn init_unique_name_account(origin) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<UniqueNameAccount<T>>::exists(), ERR_OPEN_NAME_ACCOUNT_CLAIMED);
@@ -281,11 +282,11 @@ mod tests {
 	use primitives::{Blake2Hasher, H256};
 	use runtime_io::with_externalities;
 	use runtime_primitives::{
-		testing::{Digest, DigestItem, Header, UintAuthorityId},
+		testing::{Digest, DigestItem, Header},
 		traits::{BlakeTwo256, IdentityLookup},
 		BuildStorage,
 	};
-	use support::{assert_ok, impl_outer_origin};
+	use support::{assert_noop, assert_ok, impl_outer_origin};
 
 	impl_outer_origin! {
 		pub enum Origin for Test {}
@@ -293,12 +294,6 @@ mod tests {
 
 	#[derive(Clone, Eq, PartialEq)]
 	pub struct Test;
-
-	impl consensus::Trait for Test {
-		type SessionKey = UintAuthorityId;
-		type InherentOfflineReport = ();
-		type Log = DigestItem;
-	}
 
 	impl system::Trait for Test {
 		type Origin = Origin;
@@ -308,18 +303,19 @@ mod tests {
 		type Hashing = BlakeTwo256;
 		type Digest = Digest;
 		type AccountId = u64;
-		type Lookup = IdentityLookup<u64>;
+		type Lookup = IdentityLookup<Self::AccountId>;
 		type Header = Header;
 		type Event = ();
 		type Log = DigestItem;
 	}
-
 	impl balances::Trait for Test {
 		type Balance = u64;
 		type OnFreeBalanceZero = ();
 		type OnNewAccount = ();
-		type EnsureAccountLiquid = ();
 		type Event = ();
+		type TransactionPayment = ();
+		type DustRemoval = ();
+		type TransferPayment = ();
 	}
 
 	impl timestamp::Trait for Test {
@@ -342,6 +338,13 @@ mod tests {
 	}
 
 	#[test]
+	fn init_unique_name_account_works() {
+		with_externalities(&mut new_test_ext(), || {
+			assert_ok!(Metalog::init_unique_name_account(Origin::signed(1)));
+		});
+	}
+
+	#[test]
 	fn create_metalog_works() {
 		with_externalities(&mut new_test_ext(), || {
 			let did = vec![
@@ -349,15 +352,61 @@ mod tests {
 				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
 				111, 110, 120, 70, 121, 100, 121,
 			];
-			let storage_location = vec![105, 112, 102, 115, 46, 105, 111];
 			assert_ok!(Metalog::create_metalog(
 				Origin::signed(20),
-				did.clone(),
 				did.clone(),
 				0,
 				did.clone(),
 			));
 			assert_eq!(Metalog::owner_of_did(did), Some(20));
+		});
+	}
+
+	#[test]
+	fn transfer_ownership_works() {
+		let did = vec![
+				81, 109, 97, 71, 54, 103, 67, 80, 72, 66, 75, 69, 118, 81, 116, 67, 84, 71, 55, 69,
+				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
+				111, 110, 120, 70, 121, 100, 121,
+			];
+		with_externalities(&mut new_test_ext(), || {
+			assert_noop!(Metalog::transfer_ownership(Origin::signed(1),2, did), ERR_DID_NOT_EXIST);
+		});
+	}
+
+	#[test]
+	fn buy_unique_name_works() {
+		let did = vec![
+				81, 109, 97, 71, 54, 103, 67, 80, 72, 66, 75, 69, 118, 81, 116, 67, 84, 71, 55, 69,
+				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
+				111, 110, 120, 70, 121, 100, 121,
+			];
+		with_externalities(&mut new_test_ext(), || {
+			assert_noop!(Metalog::buy_unique_name(Origin::signed(1), did.clone(), did.clone()), ERR_DID_NOT_EXIST);
+		});
+	}
+
+	#[test]
+	fn change_license_code_works() {
+		let did = vec![
+				81, 109, 97, 71, 54, 103, 67, 80, 72, 66, 75, 69, 118, 81, 116, 67, 84, 71, 55, 69,
+				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
+				111, 110, 120, 70, 121, 100, 121,
+			];
+		with_externalities(&mut new_test_ext(), || {
+			assert_noop!(Metalog::change_license_code(Origin::signed(1), did, 1), ERR_DID_NOT_EXIST);
+		});
+	}
+
+	#[test]
+	fn change_storage_location_works() {
+		let did = vec![
+				81, 109, 97, 71, 54, 103, 67, 80, 72, 66, 75, 69, 118, 81, 116, 67, 84, 71, 55, 69,
+				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
+				111, 110, 120, 70, 121, 100, 121,
+			];
+		with_externalities(&mut new_test_ext(), || {
+			assert_noop!(Metalog::change_storage_location(Origin::signed(1), did.clone(), did.clone()), ERR_DID_NOT_EXIST);
 		});
 	}
 }

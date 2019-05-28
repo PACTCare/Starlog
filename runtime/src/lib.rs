@@ -311,6 +311,7 @@ impl_runtime_apis! {
 		}
 	}
 
+	// FIXME: needs to be uncommended for tests?
 	impl consensus_authorities::AuthoritiesApi<Block> for Runtime {
 		fn authorities() -> Vec<AuthorityId> {
 			Consensus::authorities()

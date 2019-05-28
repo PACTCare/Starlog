@@ -8,9 +8,6 @@ use support::{
 };
 use {system::ensure_signed, timestamp};
 
-// Read TCR concepts here
-// https://www.gautamdhameja.com/token-curated-registries-explain-eli5-a5d4cce0ddbe/
-
 // the module trait
 pub trait Trait: timestamp::Trait + stars::Trait {
   type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
@@ -482,7 +479,7 @@ mod tests {
   use primitives::{Blake2Hasher, H256};
   use runtime_io::with_externalities;
   use runtime_primitives::{
-    testing::{Digest, DigestItem, Header, UintAuthorityId},
+    testing::{Digest, DigestItem, Header},
     traits::{BlakeTwo256, IdentityLookup},
     BuildStorage,
   };
@@ -498,22 +495,17 @@ mod tests {
   #[derive(Clone, Eq, PartialEq)]
   pub struct Test;
   impl system::Trait for Test {
-    type Origin = Origin;
-    type Index = u64;
-    type BlockNumber = u64;
-    type Hash = H256;
-    type Hashing = BlakeTwo256;
-    type Digest = Digest;
-    type AccountId = u64;
-    type Lookup = IdentityLookup<u64>;
-    type Header = Header;
-    type Event = ();
-    type Log = DigestItem;
-  }
-  impl consensus::Trait for Test {
-    type Log = DigestItem;
-    type SessionKey = UintAuthorityId;
-    type InherentOfflineReport = ();
+		type Origin = Origin;
+		type Index = u64;
+		type BlockNumber = u64;
+		type Hash = H256;
+		type Hashing = BlakeTwo256;
+		type Digest = Digest;
+		type AccountId = u64;
+		type Lookup = IdentityLookup<Self::AccountId>;
+		type Header = Header;
+		type Event = ();
+		type Log = DigestItem;
   }
   impl stars::Trait for Test {
     type Event = ();
@@ -536,7 +528,7 @@ mod tests {
       .unwrap()
       .0;
     t.extend(
-      token::GenesisConfig::<Test> { total_supply: 1000 }
+      stars::GenesisConfig::<Test> { total_supply: 1000 }
         .build_storage()
         .unwrap()
         .0,

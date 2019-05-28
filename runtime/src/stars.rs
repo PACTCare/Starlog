@@ -1,4 +1,4 @@
-//! Implementation of the stars token, see https://github.com/PACTCare/Stars-Network/blob/master/WHITEPAPER.md#incentive
+//! Implementation of the Stars Token, see https://github.com/PACTCare/Stars-Network/blob/master/WHITEPAPER.md#incentive
 use parity_codec::Codec;
 use rstd::prelude::*;
 use runtime_primitives::traits::{As, CheckedAdd, CheckedSub, Member, SimpleArithmetic};
@@ -9,6 +9,17 @@ use support::{
 use system::{self, ensure_signed};
 
 const ERR_NOT_OWNER: &str = "Account does not own this token";
+
+const ERR_TOKEN_INIT: &str = "Token already initialized.";
+
+const ERR_ALLOWANCE_OVERFLOW: &str = "Overflow in calculating allowance";
+const ERR_ALLOWANCE_NOT_EXIST: &str = "Allowance does not exist.";
+const ERR_ALLOWANCE_NOT_ENOUGH: &str = "Not enough allowance.";
+
+const ERR_BALANCE_NOT_ENOUGH: &str = "Not enough balance.";
+const ERR_BALANCE_OVERFLOW: &str = "Overflow in calculating balance";
+
+const ERR_DEPOSIT_OVERFLOW: &str = "Overflow in calculating deposit";
 
 // trait for this module
 // contains type definitions
@@ -68,7 +79,7 @@ decl_module! {
 
           // add the value to the current allowance
           // using checked_add (safe math) to avoid overflow
-          let updated_allowance = allowance.checked_add(&value).ok_or("overflow in calculating allowance")?;
+          let updated_allowance = allowance.checked_add(&value).ok_or(ERR_ALLOWANCE_OVERFLOW)?;
 
           // insert the new allownace value of this sender and spender combination
           <Allowance<T>>::insert((sender.clone(), spender.clone()), updated_allowance);
@@ -80,12 +91,12 @@ decl_module! {
 
       // if approved, transfer from an account to another account without needing owner's signature
       pub fn transfer_from(_origin, from: T::AccountId, to: T::AccountId, #[compact] value: T::TokenBalance) -> Result {
-          ensure!(<Allowance<T>>::exists((from.clone(), to.clone())), "Allowance does not exist.");
+          ensure!(<Allowance<T>>::exists((from.clone(), to.clone())), ERR_ALLOWANCE_NOT_EXIST);
           let allowance = Self::allowance((from.clone(), to.clone()));
-          ensure!(allowance >= value, "Not enough allowance.");
+          ensure!(allowance >= value, ERR_ALLOWANCE_NOT_ENOUGH);
 
           // using checked_sub (safe math) to avoid overflow
-          let updated_allowance = allowance.checked_sub(&value).ok_or("overflow in calculating allowance")?;
+          let updated_allowance = allowance.checked_sub(&value).ok_or(ERR_ALLOWANCE_OVERFLOW)?;
           // insert the new allownace value of this sender and spender combination
           <Allowance<T>>::insert((from.clone(), to.clone()), updated_allowance);
 
@@ -118,7 +129,7 @@ impl<T: Trait> Module<T> {
     // not part of ERC20 standard interface
     // similar to the ERC20 smart contract constructor
     pub fn init(sender: T::AccountId) -> Result {
-        ensure!(Self::is_init() == false, "Token already initialized.");
+        ensure!(Self::is_init() == false, ERR_TOKEN_INIT);
 
         <BalanceOf<T>>::insert(sender, Self::total_supply());
         <Init<T>>::put(true);
@@ -132,14 +143,14 @@ impl<T: Trait> Module<T> {
         ensure!(<BalanceOf<T>>::exists(from.clone()), ERR_NOT_OWNER);
 
         let sender_balance = Self::balance_of(from.clone());
-        ensure!(sender_balance > value, "Not enough balance.");
+        ensure!(sender_balance > value, ERR_BALANCE_NOT_ENOUGH);
         let updated_from_balance = sender_balance
             .checked_sub(&value)
-            .ok_or("overflow in calculating balance")?;
+            .ok_or(ERR_BALANCE_OVERFLOW)?;
         let deposit = Self::locked_deposits(listing_hash);
         let updated_deposit = deposit
             .checked_add(&value)
-            .ok_or("overflow in calculating deposit")?;
+            .ok_or(ERR_DEPOSIT_OVERFLOW)?;
 
         // deduct the deposit from balance
         <BalanceOf<T>>::insert(from, updated_from_balance);
@@ -156,11 +167,11 @@ impl<T: Trait> Module<T> {
         let to_balance = Self::balance_of(to.clone());
         let updated_to_balance = to_balance
             .checked_add(&value)
-            .ok_or("overflow in calculating balance")?;
+            .ok_or(ERR_BALANCE_OVERFLOW)?;
         let deposit = Self::locked_deposits(listing_hash);
         let updated_deposit = deposit
             .checked_sub(&value)
-            .ok_or("overflow in calculating deposit")?;
+            .ok_or(ERR_DEPOSIT_OVERFLOW)?;
 
         // add to user's balance
         <BalanceOf<T>>::insert(to, updated_to_balance);
@@ -175,14 +186,14 @@ impl<T: Trait> Module<T> {
     fn _transfer(from: T::AccountId, to: T::AccountId, value: T::TokenBalance) -> Result {
         ensure!(<BalanceOf<T>>::exists(from.clone()), ERR_NOT_OWNER);
         let sender_balance = Self::balance_of(from.clone());
-        ensure!(sender_balance >= value, "Not enough balance.");
+        ensure!(sender_balance >= value, ERR_BALANCE_NOT_ENOUGH);
         let updated_from_balance = sender_balance
             .checked_sub(&value)
-            .ok_or("overflow in calculating balance")?;
+            .ok_or(ERR_BALANCE_OVERFLOW)?;
         let receiver_balance = Self::balance_of(to.clone());
         let updated_to_balance = receiver_balance
             .checked_add(&value)
-            .ok_or("overflow in calculating balance")?;
+            .ok_or(ERR_BALANCE_OVERFLOW)?;
 
         // reduce sender's balance
         <BalanceOf<T>>::insert(from.clone(), updated_from_balance);
