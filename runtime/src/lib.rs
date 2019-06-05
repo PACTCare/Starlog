@@ -56,7 +56,7 @@ pub type BlockNumber = u64;
 /// Index of an account's extrinsic in the chain.
 pub type Nonce = u64;
 
-/// Used for the module metalog
+// Specific Starlog modules
 mod metalog;
 
 mod stars;
@@ -196,7 +196,7 @@ impl sudo::Trait for Runtime {
 	type Proposal = Call;
 }
 
-/// Used for the module metalog
+// Specific Starlog modules
 impl metalog::Trait for Runtime {
 	type Event = Event;
 }
@@ -223,6 +223,8 @@ construct_runtime!(
 		Indices: indices,
 		Balances: balances,
 		Sudo: sudo,
+
+		// Specific Starlog modules
 		Metalog: metalog::{Module, Call, Storage, Event<T>},
 		Federation: federation::{Module, Call, Storage, Event<T>, Config<T>},
 		Stars: stars::{Module, Call, Storage, Event<T>, Config<T>},

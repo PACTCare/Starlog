@@ -1,7 +1,7 @@
 //! Implementation of the Stars Token, see https://github.com/PACTCare/Stars-Network/blob/master/WHITEPAPER.md#incentive
 use parity_codec::Codec;
 use rstd::prelude::*;
-use runtime_primitives::traits::{As, CheckedAdd, CheckedSub, Member, SimpleArithmetic};
+use runtime_primitives::traits::{CheckedAdd, CheckedSub, Member, SimpleArithmetic};
 use support::{
     decl_event, decl_module, decl_storage, dispatch::Result, ensure, Parameter, StorageMap,
     StorageValue,
@@ -30,9 +30,7 @@ pub trait Trait: system::Trait {
         + SimpleArithmetic
         + Codec
         + Default
-        + Copy
-        + As<usize>
-        + As<u64>;
+        + Copy;
 }
 
 decl_storage! {

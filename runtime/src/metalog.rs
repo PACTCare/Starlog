@@ -2,8 +2,11 @@
 use support::{decl_event, decl_module, decl_storage, dispatch::Result, ensure, StorageValue, StorageMap, traits::Currency};
 use parity_codec::{Encode, Decode};
 use system::ensure_signed;
-use runtime_primitives::traits::{As};
 use rstd::vec::Vec;
+use runtime_primitives::traits::{As};
+
+//FIXME: needs to be removed for building the runtime
+//use runtime_io::{with_storage, StorageOverlay, ChildrenStorageOverlay};
 
 const ERR_DID_ALREADY_CLAIMED: &str = "This DID has already been claimed.";
 const ERR_DID_NOT_EXIST: &str = "This DID does not exist";
@@ -20,7 +23,9 @@ const ERR_NOT_OWNER: &str = "You are not the owner";
 
 const ERR_OPEN_NAME_ACCOUNT_CLAIMED: &str = "Unique name account already claimed";
 
-const ERR_BYTEARRAY_LIMIT: &str = "Bytearray is too large";
+const ERR_BYTEARRAY_LIMIT_DID: &str = "DID bytearray is too large";
+const ERR_BYTEARRAY_LIMIT_LOCATION: &str = "Location bytearray is too large";
+const ERR_BYTEARRAY_LIMIT_NAME: &str = "Name bytearray is too large";
 
 const BYTEARRAY_LIMIT_DID: usize = 100;
 const BYTEARRAY_LIMIT_LOCATION: usize = 100;
@@ -34,7 +39,6 @@ pub trait Trait: timestamp::Trait + balances::Trait {
 }
 
 /// Key metalog struct
-//TODO: Vec<u8> max length?
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 #[cfg_attr(feature = "std", derive(Debug))]
 pub struct Metalog<Time> {
@@ -67,6 +71,29 @@ decl_storage! {
 		/// Account which gets all the money for the unique name
 		UniqueNameAccount get(unique_name_account): T::AccountId;
 	}
+
+	//FIXME: needs to be removed for building the runtime
+	// add_extra_genesis {
+    //     config(metalog): Vec<(T::AccountId, u16)>;
+    //     build(|storage: &mut StorageOverlay, _: &mut ChildrenStorageOverlay, config: &GenesisConfig<T>| {
+    //         with_storage(storage, || {
+    //             for &(ref acct, license_code) in &config.metalog {
+	// 				let did = vec![1,2,3];
+	// 				let time = <timestamp::Module<T>>::now();	
+	// 				let mut default_name = Vec::new();
+	// 				default_name.push(0);
+	// 				let new_metadata = Metalog {
+	// 					did: did.clone(),
+	// 					unique_name: default_name, 
+	// 					license_code,
+	// 					storage_location: did.clone(),
+	// 					time,
+	// 				};
+    //                 let _ = <Module<T>>::_owner_store(acct.clone(), new_metadata);
+    //             }
+    //         });
+    //     });
+    // }
 }
 
 decl_module! {
@@ -76,7 +103,6 @@ decl_module! {
 		fn deposit_event<T>() = default;
 
 		/// Initialize unique name account
-		// TODO: move to config		
 		pub fn init_unique_name_account(origin) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<UniqueNameAccount<T>>::exists(), ERR_OPEN_NAME_ACCOUNT_CLAIMED);
@@ -93,11 +119,9 @@ decl_module! {
 
             let sender = ensure_signed(origin)?;
 
-			ensure!(did.len() <= BYTEARRAY_LIMIT_DID, ERR_BYTEARRAY_LIMIT);
-			ensure!(storage_location.len() <= BYTEARRAY_LIMIT_LOCATION, ERR_BYTEARRAY_LIMIT);
-
+			ensure!(did.len() <= BYTEARRAY_LIMIT_DID, ERR_BYTEARRAY_LIMIT_DID);
+			ensure!(storage_location.len() <= BYTEARRAY_LIMIT_LOCATION, ERR_BYTEARRAY_LIMIT_LOCATION);
 			ensure!(!<DidOwner<T>>::exists(&did), ERR_DID_ALREADY_CLAIMED);
-			
 			ensure!(license_code != DELETE_LICENSE, ERR_LICENSE_INVALID);
 
 			let time = <timestamp::Module<T>>::now();
@@ -133,7 +157,7 @@ decl_module! {
 
 			Self::_check_did_ownership(sender.clone(), &did)?;
 
-			ensure!(did.len() <= BYTEARRAY_LIMIT_NAME, ERR_BYTEARRAY_LIMIT);
+			ensure!(unique_name.len() <= BYTEARRAY_LIMIT_NAME, ERR_BYTEARRAY_LIMIT_NAME);
 
 			ensure!(!<UnOwner<T>>::exists(&unique_name), ERR_UN_ALREADY_CLAIMED);
 			Self::_pay_name(sender.clone())?;
@@ -172,7 +196,7 @@ decl_module! {
 		pub fn change_storage_location(origin, did: Vec<u8>, storage_location: Vec<u8>)-> Result{
 			let sender = ensure_signed(origin)?;
 
-			ensure!(did.len() <= BYTEARRAY_LIMIT_LOCATION, ERR_BYTEARRAY_LIMIT);
+			ensure!(storage_location.len() <= BYTEARRAY_LIMIT_LOCATION, ERR_BYTEARRAY_LIMIT_LOCATION);
 
 			Self::_check_did_ownership(sender.clone(), &did)?;
 			let mut metadata = Self::meta_of_did(&did);
@@ -280,7 +304,7 @@ mod tests {
 	use super::*;
 
 	use primitives::{Blake2Hasher, H256};
-	use runtime_io::with_externalities;
+	use runtime_io::{with_externalities};
 	use runtime_primitives::{
 		testing::{Digest, DigestItem, Header},
 		traits::{BlakeTwo256, IdentityLookup},
@@ -327,14 +351,16 @@ mod tests {
 		type Event = ();
 	}
 
+	type Balances = balances::Module<Test>;
 	type Metalog = Module<Test>;
 
 	fn new_test_ext() -> runtime_io::TestExternalities<Blake2Hasher> {
-		system::GenesisConfig::<Test>::default()
-			.build_storage()
-			.unwrap()
-			.0
-			.into()
+		let mut t = system::GenesisConfig::<Test>::default().build_storage().unwrap().0;
+        t.extend(balances::GenesisConfig::<Test>::default().build_storage().unwrap().0);
+        t.extend(GenesisConfig::<Test> {
+            metalog: vec![(0, 0)],
+        }.build_storage().unwrap().0);
+        t.into()
 	}
 
 	#[test]
@@ -347,66 +373,85 @@ mod tests {
 	#[test]
 	fn create_metalog_works() {
 		with_externalities(&mut new_test_ext(), || {
-			let did = vec![
-				81, 109, 97, 71, 54, 103, 67, 80, 72, 66, 75, 69, 118, 81, 116, 67, 84, 71, 55, 69,
-				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
-				111, 110, 120, 70, 121, 100, 121,
-			];
-			assert_ok!(Metalog::create_metalog(
-				Origin::signed(20),
-				did.clone(),
-				0,
-				did.clone(),
-			));
-			assert_eq!(Metalog::owner_of_did(did), Some(20));
+			let did_new = vec![1,2];
+			let did_claimed = vec![1,2,3];
+			let mut did_too_long = did_new.clone();
+			let mut location_too_long = did_new.clone();
+			for _i in 1..100 {
+				did_too_long.push(2);
+				location_too_long.push(2);
+			}
+			assert_noop!(Metalog::create_metalog(Origin::signed(20), did_new.clone() , DELETE_LICENSE, did_new.clone()), ERR_LICENSE_INVALID);
+			assert_noop!(Metalog::create_metalog(Origin::signed(20), did_claimed , 0, did_new.clone()), ERR_DID_ALREADY_CLAIMED);
+			assert_noop!(Metalog::create_metalog(Origin::signed(20), did_too_long.clone(), 0, did_new.clone()), ERR_BYTEARRAY_LIMIT_DID);
+			assert_noop!(Metalog::create_metalog(Origin::signed(20), did_new.clone(), 0, location_too_long.clone()), ERR_BYTEARRAY_LIMIT_LOCATION);
+			assert_ok!(Metalog::create_metalog(Origin::signed(20), did_new.clone(), 0, did_new.clone()));			
+			assert_eq!(Metalog::owner_of_did(did_new), Some(20));
 		});
 	}
 
 	#[test]
 	fn transfer_ownership_works() {
-		let did = vec![
-				81, 109, 97, 71, 54, 103, 67, 80, 72, 66, 75, 69, 118, 81, 116, 67, 84, 71, 55, 69,
-				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
-				111, 110, 120, 70, 121, 100, 121,
-			];
+		let did_claimed = vec![1,2,3];
+		let did_new = vec![1, 2, 3, 4];
 		with_externalities(&mut new_test_ext(), || {
-			assert_noop!(Metalog::transfer_ownership(Origin::signed(1),2, did), ERR_DID_NOT_EXIST);
+			assert_noop!(Metalog::transfer_ownership(Origin::signed(0),2, did_new), ERR_DID_NOT_EXIST);
+			assert_noop!(Metalog::transfer_ownership(Origin::signed(1),2, did_claimed.clone()), ERR_NOT_OWNER);
+			assert_ok!(Metalog::transfer_ownership(Origin::signed(0),20, did_claimed.clone()));	
+			assert_eq!(Metalog::owner_of_did(did_claimed), Some(20));
 		});
 	}
 
 	#[test]
 	fn buy_unique_name_works() {
-		let did = vec![
-				81, 109, 97, 71, 54, 103, 67, 80, 72, 66, 75, 69, 118, 81, 116, 67, 84, 71, 55, 69,
-				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
-				111, 110, 120, 70, 121, 100, 121,
-			];
+		let did_claimed = vec![1,2,3];
+		let did_new = vec![1, 2, 3, 4];
+		let un = vec![1];
+		let mut un_too_long = un.clone();
+		for _i in 1..60 {
+			un_too_long.push(2);
+		}	
 		with_externalities(&mut new_test_ext(), || {
-			assert_noop!(Metalog::buy_unique_name(Origin::signed(1), did.clone(), did.clone()), ERR_DID_NOT_EXIST);
+			assert_noop!(Metalog::buy_unique_name(Origin::signed(0), did_new, un.clone()), ERR_DID_NOT_EXIST);
+			assert_noop!(Metalog::buy_unique_name(Origin::signed(1), did_claimed.clone(), un.clone()), ERR_NOT_OWNER);
+			assert_noop!(Metalog::buy_unique_name(Origin::signed(0), did_claimed.clone(), un.clone()), "balance too low to send value");
+			let _ = Balances::make_free_balance_be(&0, 5000);
+			assert_noop!(Metalog::buy_unique_name(Origin::signed(0), did_claimed.clone(), un_too_long), ERR_BYTEARRAY_LIMIT_NAME);
+			assert_ok!(Metalog::buy_unique_name(Origin::signed(0), did_claimed.clone(), un.clone()));
+			let metadata = Metalog::meta_of_did(&did_claimed);
+			assert_eq!(metadata.unique_name, un.clone());
 		});
 	}
 
 	#[test]
 	fn change_license_code_works() {
-		let did = vec![
-				81, 109, 97, 71, 54, 103, 67, 80, 72, 66, 75, 69, 118, 81, 116, 67, 84, 71, 55, 69,
-				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
-				111, 110, 120, 70, 121, 100, 121,
-			];
+		let did_claimed = vec![1,2,3];
+		let did_new = vec![1, 2, 3, 4];
 		with_externalities(&mut new_test_ext(), || {
-			assert_noop!(Metalog::change_license_code(Origin::signed(1), did, 1), ERR_DID_NOT_EXIST);
+			assert_noop!(Metalog::change_license_code(Origin::signed(0), did_new, 1), ERR_DID_NOT_EXIST);
+			assert_noop!(Metalog::change_license_code(Origin::signed(1), did_claimed.clone(), 1), ERR_NOT_OWNER);
+			assert_ok!(Metalog::change_license_code(Origin::signed(0), did_claimed.clone(), 4));
+			let metadata = Metalog::meta_of_did(&did_claimed);
+			assert_eq!(metadata.license_code, 4);
 		});
 	}
 
 	#[test]
 	fn change_storage_location_works() {
-		let did = vec![
-				81, 109, 97, 71, 54, 103, 67, 80, 72, 66, 75, 69, 118, 81, 116, 67, 84, 71, 55, 69,
-				76, 97, 49, 74, 49, 102, 104, 57, 75, 55, 105, 105, 116, 99, 67, 119, 114, 87, 112,
-				111, 110, 120, 70, 121, 100, 121,
-			];
+		let did_claimed = vec![1,2,3];
+		let did_new = vec![1, 2, 3, 4];
+		let location = vec![0,1];
+		let mut location_too_long = location.clone();
+		for _i in 1..100 {
+			location_too_long.push(1);
+		}
 		with_externalities(&mut new_test_ext(), || {
-			assert_noop!(Metalog::change_storage_location(Origin::signed(1), did.clone(), did.clone()), ERR_DID_NOT_EXIST);
+			assert_noop!(Metalog::change_storage_location(Origin::signed(0), did_new, location.clone()), ERR_DID_NOT_EXIST);
+			assert_noop!(Metalog::change_storage_location(Origin::signed(1), did_claimed.clone(), location.clone()), ERR_NOT_OWNER);
+			assert_noop!(Metalog::change_storage_location(Origin::signed(0), did_claimed.clone(), location_too_long.clone()), ERR_BYTEARRAY_LIMIT_LOCATION);
+			assert_ok!(Metalog::change_storage_location(Origin::signed(0), did_claimed.clone(), location.clone()));
+			let metadata = Metalog::meta_of_did(&did_claimed);
+			assert_eq!(metadata.storage_location, location.clone());
 		});
 	}
 }

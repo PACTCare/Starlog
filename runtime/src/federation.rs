@@ -1,7 +1,6 @@
 use crate::stars;
 use parity_codec::{Decode, Encode};
 use rstd::prelude::*;
-use runtime_io;
 use runtime_primitives::traits::{As, CheckedAdd, CheckedDiv, CheckedMul, Hash};
 use support::{
   decl_event, decl_module, decl_storage, dispatch::Result, ensure, StorageMap, StorageValue,
@@ -16,11 +15,11 @@ pub trait Trait: timestamp::Trait + stars::Trait {
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 // generic type parameters - Balance, AccountId, timestamp::Moment
-pub struct Listing<U, V, W> {
+pub struct Listing<TokenBalance, AccountId, W> {
   id: u32,
   data: Vec<u8>,
-  deposit: U,
-  owner: V,
+  deposit: TokenBalance,
+  owner: AccountId,
   application_expiry: W,
   whitelisted: bool,
   challenge_id: u32,
@@ -28,33 +27,30 @@ pub struct Listing<U, V, W> {
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
-// generic type parameters - Balance, AccountId, timestamp::Moment
-pub struct Challenge<T, U, V, W> {
-  listing_hash: T,
-  deposit: U,
-  owner: V,
-  voting_ends: W,
+pub struct Challenge<Hash, TokenBalance, AccountId, Moment> {
+  listing_hash: Hash,
+  deposit: TokenBalance,
+  owner: AccountId,
+  voting_ends: Moment,
   resolved: bool,
-  reward_pool: U,
-  total_tokens: U,
+  reward_pool: TokenBalance,
+  total_tokens: TokenBalance,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
-// generic type parameters - Balance
-pub struct Vote<U> {
+pub struct Vote<TokenBalance> {
   value: bool,
-  deposit: U,
+  deposit: TokenBalance,
   claimed: bool,
 }
 
 #[cfg_attr(feature = "std", derive(Debug))]
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
-// generic type parameters - Balance
-pub struct Poll<T, U> {
-  listing_hash: T,
-  votes_for: U,
-  votes_against: U,
+pub struct Poll<Hash, TokenBalance> {
+  listing_hash: Hash,
+  votes_for: TokenBalance,
+  votes_against: TokenBalance,
   passed: bool,
 }
 
@@ -182,7 +178,6 @@ decl_module! {
       // let the world know
       // raise the event
       Self::deposit_event(RawEvent::Proposed(sender, hashed.clone(), deposit));
-      runtime_io::print("Listing created!");
 
       Ok(())
     }
@@ -252,7 +247,6 @@ decl_module! {
 
       // raise the event
       Self::deposit_event(RawEvent::Challenged(sender, listing_hash, poll_nonce, deposit));
-      runtime_io::print("Challenge created!");
 
       Ok(())
     }
@@ -298,7 +292,6 @@ decl_module! {
 
       // raise the event
       Self::deposit_event(RawEvent::Voted(sender, challenge_id, deposit));
-      runtime_io::print("Vote created!");
       Ok(())
     }
 
@@ -442,7 +435,6 @@ decl_module! {
       Self::ensure_admin(origin)?;
 
       <Admins<T>>::insert(new_admin, true);
-      runtime_io::print("New admin added!");
       Ok(())
     }
 
@@ -452,7 +444,6 @@ decl_module! {
 
       ensure!(<Admins<T>>::exists(&admin_to_remove), "The admin you are trying to remove does not exist");
       <Admins<T>>::remove(admin_to_remove);
-      runtime_io::print("Admin removed!");
       Ok(())
     }
   }

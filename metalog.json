@@ -5,5 +5,35 @@
         "license_code": "u16",
         "storage_location": "Vec<u8>",
         "time": "Moment"
-    }
+    },
+    "Listing": {
+        "id": "u32",
+        "data": "Vec<u8>",
+        "deposit": "u128",
+        "owner": "AccountId",
+        "application_expiry": "Moment",
+        "whitelisted": "bool",
+        "challenge_id": "u32"
+    },
+    "Challenge": {
+        "listing_hash": "Hash",
+        "deposit": "u128",
+        "owner": "AccountId",
+        "voting_ends": "Moment",
+        "resolved": "bool",
+        "reward_pool": "u128",
+        "total_tokens": "u128"
+    },
+    "Vote": {
+        "value": "bool",
+        "deposit": "u128",
+        "claimed": "bool"
+    },
+    "Poll": {
+        "listing_hash": "Hash",
+        "votes_for": "u128",
+        "votes_against": "u128",
+        "passed": "bool"
+    },
+    "TokenBalance": "u128"
 }
