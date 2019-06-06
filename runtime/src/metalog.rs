@@ -1,5 +1,8 @@
-//! Metalog runtime, see https://github.com/PACTCare/Stars-Network/blob/master/WHITEPAPER.md#--starlog--substrate-
-use support::{decl_event, decl_module, decl_storage, dispatch::Result, ensure, StorageValue, StorageMap, traits::Currency};
+//! # Metalog Module
+//!
+//! For more informaiton see https://github.com/PACTCare/Stars-Network/blob/master/WHITEPAPER.md#--starlog--substrate-
+
+use support::{decl_event, decl_module, decl_storage, dispatch::Result, ensure, StorageMap, traits::{Currency, ExistenceRequirement, WithdrawReason}};
 use parity_codec::{Encode, Decode};
 use system::ensure_signed;
 use rstd::vec::Vec;
@@ -21,8 +24,6 @@ const ERR_UNDERFLOW: &str = "Underflow removing metadata";
 
 const ERR_NOT_OWNER: &str = "You are not the owner";
 
-const ERR_OPEN_NAME_ACCOUNT_CLAIMED: &str = "Unique name account already claimed";
-
 const ERR_BYTEARRAY_LIMIT_DID: &str = "DID bytearray is too large";
 const ERR_BYTEARRAY_LIMIT_LOCATION: &str = "Location bytearray is too large";
 const ERR_BYTEARRAY_LIMIT_NAME: &str = "Name bytearray is too large";
@@ -32,6 +33,8 @@ const BYTEARRAY_LIMIT_LOCATION: usize = 100;
 const BYTEARRAY_LIMIT_NAME: usize = 50;
 
 const DELETE_LICENSE: u16 = 1;
+
+const FEE_PER_USED_CHAR: u64 = 100;
 
 /// The module's configuration traits are timestamp and balance
 pub trait Trait: timestamp::Trait + balances::Trait {
@@ -67,9 +70,6 @@ decl_storage! {
 		/// Query by DIDs 
 		DidMeta get(meta_of_did): map Vec<u8> => Metalog<T::Moment>;
 		DidOwner get(owner_of_did): map Vec<u8> => Option<T::AccountId>;
-
-		/// Account which gets all the money for the unique name
-		UniqueNameAccount get(unique_name_account): T::AccountId;
 	}
 
 	//FIXME: needs to be removed for building the runtime
@@ -101,14 +101,6 @@ decl_module! {
 	pub struct Module<T: Trait> for enum Call where origin: T::Origin {
 		// For deposit events
 		fn deposit_event<T>() = default;
-
-		/// Initialize unique name account
-		pub fn init_unique_name_account(origin) -> Result {
-			let sender = ensure_signed(origin)?;
-			ensure!(!<UniqueNameAccount<T>>::exists(), ERR_OPEN_NAME_ACCOUNT_CLAIMED);
-			<UniqueNameAccount<T>>::put(sender);
-			Ok(())
-		}
 
 		/// Store initial metalog
         fn create_metalog(
@@ -160,7 +152,8 @@ decl_module! {
 			ensure!(unique_name.len() <= BYTEARRAY_LIMIT_NAME, ERR_BYTEARRAY_LIMIT_NAME);
 
 			ensure!(!<UnOwner<T>>::exists(&unique_name), ERR_UN_ALREADY_CLAIMED);
-			Self::_pay_name(sender.clone())?;
+
+			Self::_pay_unique_name(sender.clone(), unique_name.len() as u64)?;
 
 			let mut metalog = Self::meta_of_did(&did);
 			metalog.unique_name = unique_name.clone();
@@ -286,16 +279,19 @@ impl<T: Trait> Module<T> {
 		Ok(())
 	}
 
-	/// Payment for unique name
-	fn _pay_name(sender: T::AccountId)-> Result{
-		let price = <T::Balance as As<u64>>::sa(1000);
-		let name_account = Self::unique_name_account();
+	/// Payment for unique names
+	fn _pay_unique_name(who: T::AccountId, length: u64) -> Result {
+		let unused_charters = (BYTEARRAY_LIMIT_NAME as u64) - length;
+		let fee = T::Balance::sa(FEE_PER_USED_CHAR * (unused_charters + 1) * (unused_charters + 1));
+    	let _ = <balances::Module<T> as Currency<_>>::withdraw(
+      	&who,
+      	fee,
+      	WithdrawReason::Fee,
+      	ExistenceRequirement::KeepAlive
+    )?;
 
-		// transfer() function verifies and writes
-		<balances::Module<T> as Currency<_>>::transfer(&sender, &name_account, price)?;
-
-		Ok(())
-	}
+    Ok(())
+  	}
 }
 
 /// tests for this module
@@ -364,13 +360,6 @@ mod tests {
 	}
 
 	#[test]
-	fn init_unique_name_account_works() {
-		with_externalities(&mut new_test_ext(), || {
-			assert_ok!(Metalog::init_unique_name_account(Origin::signed(1)));
-		});
-	}
-
-	#[test]
 	fn create_metalog_works() {
 		with_externalities(&mut new_test_ext(), || {
 			let did_new = vec![1,2];
@@ -414,8 +403,8 @@ mod tests {
 		with_externalities(&mut new_test_ext(), || {
 			assert_noop!(Metalog::buy_unique_name(Origin::signed(0), did_new, un.clone()), ERR_DID_NOT_EXIST);
 			assert_noop!(Metalog::buy_unique_name(Origin::signed(1), did_claimed.clone(), un.clone()), ERR_NOT_OWNER);
-			assert_noop!(Metalog::buy_unique_name(Origin::signed(0), did_claimed.clone(), un.clone()), "balance too low to send value");
-			let _ = Balances::make_free_balance_be(&0, 5000);
+			assert_noop!(Metalog::buy_unique_name(Origin::signed(0), did_claimed.clone(), un.clone()), "too few free funds in account");
+			let _ = Balances::make_free_balance_be(&0, 500000);
 			assert_noop!(Metalog::buy_unique_name(Origin::signed(0), did_claimed.clone(), un_too_long), ERR_BYTEARRAY_LIMIT_NAME);
 			assert_ok!(Metalog::buy_unique_name(Origin::signed(0), did_claimed.clone(), un.clone()));
 			let metadata = Metalog::meta_of_did(&did_claimed);
