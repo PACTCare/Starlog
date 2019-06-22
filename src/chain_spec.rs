@@ -1,8 +1,10 @@
 use primitives::{ed25519, sr25519, Pair};
 use starlog_runtime::{
-    AccountId, BalancesConfig, ConsensusConfig, FederationConfig, GenesisConfig, IndicesConfig,
-    StarsConfig, SudoConfig, TimestampConfig,
+    AccountId, BalancesConfig, ConsensusConfig,  GenesisConfig, IndicesConfig,
+    SudoConfig, TimestampConfig,ContractConfig,
 };
+// FederationConfig, StarsConfig
+
 use substrate_service;
 
 use ed25519::Public as AuthorityId;
@@ -120,21 +122,34 @@ fn testnet_genesis(
 		sudo: Some(SudoConfig {
 			key: root_key,
 		}),
-        stars: Some(StarsConfig {
-			// setting total supply of tokens to 21M because `Satoshi` said so
-			total_supply: 21000000,
-		}),
-		federation: Some(FederationConfig {
-			owner: account_key("Alice"),
-			// min deposit for proposals
-			min_deposit: 100,
-			// challenge time limit - for testing its set to 2 mins (120 sec)
-			apply_stage_len: 120,
-			// voting time limit - for testing its set to 4 mins (240 sec)
-			commit_stage_len: 240,
-			// initial poll/challenge set to 1
-			// to avoid 0 values
-			poll_nonce: 1,
-		})
+		contract: Some( ContractConfig {
+            transaction_base_fee: 1,
+            transaction_byte_fee: 0,
+            transfer_fee: 0,
+            creation_fee: 0,
+            contract_fee: 21,
+            call_base_fee: 135,
+            create_base_fee: 175,
+            gas_price: 1,
+            max_depth: 1024,
+            block_gas_limit: 10_000_000,
+            current_schedule: Default::default(),
+	    }),
+        // stars: Some(StarsConfig {
+		// 	// setting total supply of tokens to 21M because `Satoshi` said so
+		// 	total_supply: 21000000,
+		// }),
+		// federation: Some(FederationConfig {
+		// 	owner: account_key("Alice"),
+		// 	// min deposit for proposals
+		// 	min_deposit: 100,
+		// 	// challenge time limit - for testing its set to 2 mins (120 sec)
+		// 	apply_stage_len: 120,
+		// 	// voting time limit - for testing its set to 4 mins (240 sec)
+		// 	commit_stage_len: 240,
+		// 	// initial poll/challenge set to 1
+		// 	// to avoid 0 values
+		// 	poll_nonce: 1,
+		// })
 	}
 }

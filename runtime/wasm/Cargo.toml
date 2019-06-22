@@ -1,6 +1,7 @@
 [profile.release]
 lto = true
 panic = 'abort'
+
 [dependencies.starlog-runtime]
 default-features = false
 path = '..'
