@@ -1,9 +1,8 @@
 use primitives::{ed25519, sr25519, Pair};
 use starlog_runtime::{
     AccountId, BalancesConfig, ConsensusConfig,  GenesisConfig, IndicesConfig,
-    SudoConfig, TimestampConfig,ContractConfig,
+    SudoConfig, TimestampConfig,ContractConfig, FederationConfig
 };
-// FederationConfig, StarsConfig
 
 use substrate_service;
 
@@ -135,21 +134,13 @@ fn testnet_genesis(
             block_gas_limit: 10_000_000,
             current_schedule: Default::default(),
 	    }),
-        // stars: Some(StarsConfig {
-		// 	// setting total supply of tokens to 21M because `Satoshi` said so
-		// 	total_supply: 21000000,
-		// }),
-		// federation: Some(FederationConfig {
-		// 	owner: account_key("Alice"),
-		// 	// min deposit for proposals
-		// 	min_deposit: 100,
-		// 	// challenge time limit - for testing its set to 2 mins (120 sec)
-		// 	apply_stage_len: 120,
-		// 	// voting time limit - for testing its set to 4 mins (240 sec)
-		// 	commit_stage_len: 240,
-		// 	// initial poll/challenge set to 1
-		// 	// to avoid 0 values
-		// 	poll_nonce: 1,
-		// })
+		federation: Some(FederationConfig {
+			admiral_stake: 5000,
+            section31_stake: 4000,
+            captain_stake: 3000,
+            engineer_stake: 2000,
+            crew_stake: 1000,
+            min_stake: 10,
+		})
 	}
 }

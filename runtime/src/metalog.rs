@@ -18,8 +18,6 @@ use system::ensure_signed;
 // FIXME: needs to be removed for building the runtime
 use runtime_io::{with_storage, StorageOverlay, ChildrenStorageOverlay};
 
-const ERR_BALANCE_LOW: &str = "too few free funds in account";
-
 const ERR_DID_ALREADY_CLAIMED: &str = "This DID has already been claimed.";
 const ERR_DID_NOT_EXIST: &str = "This DID does not exist";
 const ERR_DID_NO_OWNER: &str = "No one owens this did";
@@ -65,7 +63,7 @@ pub struct Metalog<Time> {
 
 decl_storage! {
     trait Store for Module<T: Trait> as Metalog {
-        /// Array of personal owned metalog data
+        /// Array of personal owned metalog data 
         OwnedMetaArray get(metadata_of_owner_by_index): map (T::AccountId, u64) => Metalog<T::Moment>;
 
         /// Number of stored metalogs per account
@@ -297,6 +295,8 @@ mod tests {
         BuildStorage,
     };
     use support::{assert_noop, assert_ok, impl_outer_origin};
+
+    const ERR_BALANCE_LOW: &str = "too few free funds in account";
 
     impl_outer_origin! {
         pub enum Origin for Test {}
