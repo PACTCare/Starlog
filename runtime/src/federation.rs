@@ -6,7 +6,6 @@
 
 //TODO: 
 // slashing
-// overflow
 
 use support::{decl_module, 
 	decl_storage, 
@@ -15,7 +14,7 @@ use support::{decl_module,
 	ensure,
 	traits::{Currency, ExistenceRequirement, WithdrawReason}, 
 	dispatch::Result};
-use runtime_primitives::traits::As;
+use runtime_primitives::traits::{CheckedAdd, As};
 use parity_codec::{Decode, Encode};
 use system::ensure_signed;
 
@@ -27,7 +26,10 @@ const ERR_VOTE_LOCK: &str = "The funds are still locked";
 const ERR_VOTE_RANK: &str = "The intended rank of the candidate needs to be higher than the guest rank.";
 const ERR_VOTE_EXIST: &str = "To cancel a vote, you need to have voted for the specific account";
 
-const ERR_OVERFLOW: &str = "Overflow adding new candidate";
+const ERR_OVERFLOW_STAKE: &str = "Overflow adding new stake";
+const ERR_OVERFLOW_VOTES: &str = "Overflow adding new votes";
+const ERR_OVERFLOW_COUNT: &str = "Overflow increasing vote count";
+const ERR_UNDERFLOW: &str = "Underflow removing votes";
 
 const ADMIRAL_RANK: u16 = 5;
 const SECTION31_RANK: u16 = 4;
@@ -132,7 +134,7 @@ decl_module! {
             };
 
 			let count = Self::vote_count(&sender);
-			let updated_count = count.checked_add(1).ok_or(ERR_OVERFLOW)?;
+			let updated_count = count.checked_add(1).ok_or(ERR_OVERFLOW_COUNT)?;
 
 			Self::_stake(&sender, stake.clone())?;
 			
@@ -142,7 +144,8 @@ decl_module! {
 			if vote_index > 0{
 				//update vote
 				let mut old_vote = Self::votes_of_owner_by_index((sender.clone(), vote_index.clone()));
-				old_vote.stake += vote.stake;
+				// check_add 
+				old_vote.stake = old_vote.stake.checked_add(&vote.stake).ok_or(ERR_OVERFLOW_STAKE)?;
 				<VoteArray<T>>::insert((sender.clone(), vote_index), &old_vote); 
 			} else {
 				//store new vote, starts with one
@@ -151,7 +154,7 @@ decl_module! {
 				<VoteCount<T>>::insert(&sender, updated_count);
 			}
 			//update candidate
-			candidate.votes += Self::_calculate_voting_power(stake, lock_time);
+			candidate.votes = candidate.votes.checked_add(Self::_calculate_voting_power(stake, lock_time)).ok_or(ERR_OVERFLOW_VOTES)?;
 			let rank = Self::_return_updated_rank(&candidate.intended_rank, &candidate.votes);
 			candidate.current_rank = rank;
 			<CandidateStore<T>>::insert(candidate_vote.clone(), &candidate);
@@ -171,7 +174,7 @@ decl_module! {
 			<VoteIndex<T>>::remove((sender.clone(), candidate_vote.clone()));
 			
 			let mut candidate = Self::candidate_by_account(&candidate_vote);
-			candidate.votes -= Self::_calculate_voting_power(old_vote.stake, old_vote.lock_time);;
+			candidate.votes = candidate.votes.checked_sub(Self::_calculate_voting_power(old_vote.stake, old_vote.lock_time)).ok_or(ERR_UNDERFLOW)?;
 			let rank = Self::_return_updated_rank(&candidate.intended_rank, &candidate.votes);
 			candidate.current_rank = rank;
 			<CandidateStore<T>>::insert(&candidate_vote, &candidate);
