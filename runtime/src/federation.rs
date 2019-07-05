@@ -5,7 +5,6 @@
 //! For more information see https://github.com/PACTCare/Stars-Network/blob/master/WHITEPAPER.md#governance
 
 // TODO: 
-// slashing
 // refactor testing pre set accounts
 
 use support::{decl_module, 
@@ -25,6 +24,7 @@ const ERR_RANK_LOCK: &str = "Ranks can only be changed 4 weeks after the last ch
 const ERR_VOTE_MIN_STAKE: &str = "To vote you need to stake at least the minimum amount of tokens";
 const ERR_VOTE_MIN_LOCK: &str = "To vote you need to lock at least for one week";
 const ERR_VOTE_LOCK: &str = "The funds are still locked";
+const ERR_VOTE_LOCK_CHALLENGE: &str = "Can't unstake during active challenge";
 const ERR_VOTE_RANK: &str = "The intended rank of the candidate needs to be higher than the guest rank.";
 const ERR_VOTE_EXIST: &str = "To cancel a vote, you need to have voted for the specific account";
 const ERR_VOTE_DOUBLE: &str = "The previous vote needs to be canceled for this, before a new vote can be submitted";
@@ -62,8 +62,11 @@ pub struct Vote<Account, Balance, BlockNumber>{
 	pub account: Account,
 	pub stake_for: Balance, 
 	pub stake_against: Balance, 
-	pub block_number: BlockNumber,
+	pub vote_time: BlockNumber,
 	pub lock_time: BlockNumber,
+	// challenge id = challenge_start for now
+	pub challenge_id: BlockNumber,
+
 }
 
 decl_storage! {
@@ -79,6 +82,9 @@ decl_storage! {
 
         /// Index of specific (user, voted account) combination
         VoteIndex get(vote_index): map (T::AccountId, T::AccountId) => u64;
+
+		/// (candidate, challenge_id) => true = successful challenge, false unsuccessful
+		ChallengeResult get(result): map (T::AccountId, T::BlockNumber) => bool;
 
 		// parameters 
 		/// Minimum stake requirements for admirals
@@ -100,6 +106,8 @@ decl_storage! {
 
 		/// After you switched your rank, you can only switch it again after one month
 		pub RankLock get(rank_lock) config(): T::BlockNumber = T::BlockNumber::sa(403200);
+
+		pub ChallengeLock get(challenge_lock) config(): T::BlockNumber = T::BlockNumber::sa(100800);
 	}
 }
 
@@ -110,7 +118,6 @@ decl_module! {
 
 		/// Change own rank
 		/// Account must have enough transferrable funds in it to pay the stake
-		// TODO: set to zero return all staked funds
         fn change_rank(origin, intended_rank: u16) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(intended_rank <= ADMIRAL_RANK, ERR_RANK_LOWER);
@@ -119,7 +126,7 @@ decl_module! {
 			ensure!(block_number - candidate.last_change >= Self::rank_lock(), ERR_RANK_LOCK);
 			candidate.intended_rank = intended_rank;
 
-			let rank = Self::_return_updated_rank(&intended_rank, &candidate.votes_for);
+			let rank = Self::_return_updated_rank(&candidate);
 			candidate.current_rank = rank;
 
 			<CandidateStore<T>>::insert(sender.clone(), &candidate);
@@ -137,21 +144,26 @@ decl_module! {
 			Self::_stake(&sender, stake.clone())?;
 
 			//store vote
-			let block_number = <system::Module<T>>::block_number();
+			let vote_time = <system::Module<T>>::block_number();
+			let mut challenge_id = T::BlockNumber::sa(0);
+			//if active challenge add challenge id
+			if (vote_time - candidate.challenge_start) <= Self::challenge_lock() {
+				challenge_id = candidate.challenge_start;
+			}
 			let vote = Vote {
                	account: candidate_id.clone(),
 				stake_for: stake,
 				stake_against: T::Balance::sa(0),
-				block_number,
+				vote_time,
 				lock_time,
+				challenge_id,
 			};
 
 			Self::_store_vote(sender.clone(), candidate_id.clone(), vote.clone())?;
 
 			//update candidate
-			// TODO: should this be impossible if vote against has certain level?
 			candidate.votes_for = candidate.votes_for.checked_add(Self::_calculate_voting_power(stake, lock_time)).ok_or(ERR_OVERFLOW_VOTES)?;
-			let rank = Self::_return_updated_rank(&candidate.intended_rank, &candidate.votes_for);
+			let rank = Self::_return_updated_rank(&candidate);
 			candidate.current_rank = rank;
 			<CandidateStore<T>>::insert(candidate_id.clone(), &candidate);
 			Self::deposit_event(RawEvent::Voted(candidate_id, stake));
@@ -159,9 +171,7 @@ decl_module! {
 		}
 
 		/// Vote against candidate
-		// TODO: 
-		// you have only access to your money after lock_time
-		// incognito vote, zebra
+		// TODO: incognito vote, zebra
 		fn candidate_challenge(origin, candidate_id: T::AccountId, stake: T::Balance, lock_time: T::BlockNumber) -> Result {
 			let sender = ensure_signed(origin)?;
 			let mut candidate = Self::candidate_by_account(&candidate_id);
@@ -170,22 +180,23 @@ decl_module! {
 			Self::_check_vote(candidate.intended_rank, vote_index, lock_time)?;
 			Self::_stake(&sender, stake.clone())?;
 
+			let vote_time = <system::Module<T>>::block_number();
+			if candidate.votes_against == 0 {
+				// if nobody voted against a candidate before, challenge time starts
+				candidate.challenge_start = vote_time;
+			}
+
 			//store vote
-			let block_number = <system::Module<T>>::block_number();
 			let vote = Vote {
                	account: candidate_id.clone(),
 				stake_for: T::Balance::sa(0),
 				stake_against: stake,
-				block_number,
+				vote_time,
 				lock_time,
+				challenge_id: vote_time,
 			};
 
 			Self::_store_vote(sender.clone(), candidate_id.clone(), vote.clone())?;
-			
-			// if nobody voted against a candidate before, challenge time starts
-			if candidate.votes_against == 0 {
-				candidate.challenge_start = block_number;
-			}
 
 			candidate.votes_against = candidate.votes_against.checked_add(Self::_calculate_voting_power(stake, lock_time)).ok_or(ERR_OVERFLOW_VOTES)?;
 			<CandidateStore<T>>::insert(candidate_id.clone(), &candidate);
@@ -198,15 +209,35 @@ decl_module! {
 			let sender = ensure_signed(origin)?;
 			let vote_index = Self::vote_index((sender.clone(), candidate_id.clone())); //0
 			let old_vote = Self::votes_of_owner_by_index((sender.clone(), vote_index));
+			let mut candidate = Self::candidate_by_account(&candidate_id);
 
-			//TODO: after challenge time slashing rewards/happens
-			Self::_unstake(&sender, &old_vote)?;
+			let block_number = <system::Module<T>>::block_number();
+			let mut challenge_result = false;
+			if (block_number - candidate.challenge_start) > Self::challenge_lock() && candidate.votes_against != 0 {
+				if candidate.votes_for >= candidate.votes_against {
+					<ChallengeResult<T>>::insert((candidate_id.clone(), candidate.challenge_start), false);
+				}
+				else {
+					<ChallengeResult<T>>::insert((candidate_id.clone(), candidate.challenge_start), true);
+					challenge_result = true;
+				}
+				// after challenge time allow new challenge, reset previous runs 
+				candidate.votes_against = 0;
+				candidate.challenge_start = T::BlockNumber::sa(0);
+			}
+			else if old_vote.challenge_id != T::BlockNumber::sa(0) {
+				challenge_result = Self::result((candidate_id.clone(),old_vote.challenge_id));
+			}
+
+			// if voted during current challenge time, can't unstake!
+			ensure!(candidate.challenge_start == T::BlockNumber::sa(0) || candidate.challenge_start > old_vote.vote_time, ERR_VOTE_LOCK_CHALLENGE);
+
+			Self::_unstake(&sender, &old_vote, challenge_result)?;
 			<VoteArray<T>>::remove((sender.clone(), vote_index)); 
 			<VoteIndex<T>>::remove((sender.clone(), candidate_id.clone()));
 			
-			let mut candidate = Self::candidate_by_account(&candidate_id);
 			candidate.votes_for = candidate.votes_for.checked_sub(Self::_calculate_voting_power(old_vote.stake_for, old_vote.lock_time)).ok_or(ERR_UNDERFLOW)?;
-			let rank = Self::_return_updated_rank(&candidate.intended_rank, &candidate.votes_for);
+			let rank = Self::_return_updated_rank(&candidate);
 			candidate.current_rank = rank;
 			<CandidateStore<T>>::insert(&candidate_id, &candidate);
 
@@ -261,39 +292,54 @@ impl<T: Trait> Module<T> {
 		voting_power
 	}
 
-	fn _unstake(sender: &T::AccountId, old_vote: &Vote<T::AccountId, T::Balance, T::BlockNumber>) -> Result{
+	fn _unstake(sender: &T::AccountId, old_vote: &Vote<T::AccountId, T::Balance, T::BlockNumber>, challenge_result: bool) -> Result{
 		let mut stake = old_vote.stake_for;
+		let mut voted_against = false;
 		if old_vote.stake_against == T::Balance::sa(0) {
 			ensure!(old_vote.stake_for >=  T::Balance::sa(Self::min_stake()), ERR_VOTE_EXIST);
 		}
 		else {
+			voted_against = true;
 			stake = old_vote.stake_against;
 			ensure!(old_vote.stake_against >=  T::Balance::sa(Self::min_stake()), ERR_VOTE_EXIST);
 		}
 		let block_number = <system::Module<T>>::block_number();
-		let block_dif = block_number - old_vote.block_number;
+		let block_dif = block_number - old_vote.vote_time;
+
+		// you have only access to your money after lock_time
 		ensure!(block_dif > old_vote.lock_time, ERR_VOTE_LOCK);
-		// 10% income per year with 1 Block per 6 seconds  
-		let earned_money = (T::Balance::sa(block_dif.as_() * stake.as_() * 195069/10000000000000)) + stake;
+
+		let mut earned_money = stake;
+		// instead of slashing you just don't earn the inflation
+		if voted_against == challenge_result {
+			// 10% income per year with 1 Block per 6 seconds 
+			earned_money = (T::Balance::sa(block_dif.as_() * stake.as_() * 195069/10000000000000)) + stake;
+		}
 		let _ = <balances::Module<T> as Currency<_>>::deposit_into_existing(sender, earned_money)?;
 		Ok(())
 	}
 
 	/// Returns the updated rank
-	fn _return_updated_rank(intended_rank: &u16, total_votes: &u64) -> u16{
+	fn _return_updated_rank(candidate: &Candidate<T::BlockNumber>) -> u16{
 		let mut rank = GUEST_RANK;
-
-		if total_votes > &Self::admiral_stake() && intended_rank == &ADMIRAL_RANK {
-			rank = ADMIRAL_RANK;
-		} else if total_votes > &Self::section31_stake() && intended_rank == &SECTION31_RANK {
-			rank = SECTION31_RANK;
-		} else if total_votes > &Self::captain_stake() && intended_rank == &CAPTAIN_RANK {
-			rank = CAPTAIN_RANK;
-		} else if total_votes > &Self::engineer_stake() && intended_rank == &ENGINEER_RANK {
-			rank = ENGINEER_RANK;
-		} else if total_votes > &Self::crew_stake() && intended_rank == &CREW_RANK {
-			rank = CREW_RANK;
-		} 
+		let block_number = <system::Module<T>>::block_number();
+		// Don't change rank during active challenge time
+		if (block_number - candidate.challenge_start) < Self::challenge_lock() {
+			rank = candidate.current_rank;
+		}
+		else {
+			if candidate.votes_for > Self::admiral_stake() && candidate.intended_rank == ADMIRAL_RANK {
+				rank = ADMIRAL_RANK;
+			} else if candidate.votes_for > Self::section31_stake() && candidate.intended_rank == SECTION31_RANK {
+				rank = SECTION31_RANK;
+			} else if candidate.votes_for > Self::captain_stake() && candidate.intended_rank == CAPTAIN_RANK {
+				rank = CAPTAIN_RANK;
+			} else if candidate.votes_for > Self::engineer_stake() && candidate.intended_rank == ENGINEER_RANK {
+				rank = ENGINEER_RANK;
+			} else if candidate.votes_for > Self::crew_stake() && candidate.intended_rank == CREW_RANK {
+				rank = CREW_RANK;
+			} 
+		}
 
 		rank
 	}
@@ -437,7 +483,7 @@ mod tests {
 		with_externalities(&mut new_test_ext(), || {
 			let candidate_to_vote: u64 = 2;
 			let voter: u64 = 0;
-			// TODO: Test slashing, vote against
+			let challenger: u64=1;
 
 			assert_noop!(FederationModule::cancel_candidate_vote(Origin::signed(voter.clone()), candidate_to_vote.clone()), ERR_VOTE_EXIST);
 			let _ = Balances::make_free_balance_be(&voter, 2000);
@@ -445,13 +491,29 @@ mod tests {
 			let _ = FederationModule::change_rank(Origin::signed(candidate_to_vote.clone()), 2);
 			assert_ok!(FederationModule::candidate_vote(Origin::signed(voter.clone()), candidate_to_vote.clone(), 1000, 200000));
 			// 5126400 Blocks per year -> 10 % income per year
-			assert_noop!(FederationModule::cancel_candidate_vote(Origin::signed(voter.clone()), candidate_to_vote.clone()), ERR_VOTE_LOCK);			
+			assert_noop!(FederationModule::cancel_candidate_vote(Origin::signed(voter.clone()), candidate_to_vote.clone()), ERR_VOTE_LOCK);	
+
 			System::set_block_number(5626401);
 			assert_ok!(FederationModule::cancel_candidate_vote(Origin::signed(voter.clone()), candidate_to_vote.clone()));
 			let free_balance = Balances::free_balance(voter.clone());
 			let candidate = FederationModule::candidate_by_account(&candidate_to_vote);
 			assert_eq!(candidate.votes_for, 0);
 			assert_eq!(free_balance, 2100);
+
+			// candidate challenge, same stake
+			let _ = Balances::make_free_balance_be(&challenger, 2000);
+			let _ = FederationModule::candidate_challenge(Origin::signed(challenger.clone()), candidate_to_vote.clone(), 1000, 200000);
+			assert_ok!(FederationModule::candidate_vote(Origin::signed(voter.clone()), candidate_to_vote.clone(), 100, 200000));			
+			assert_noop!(FederationModule::cancel_candidate_vote(Origin::signed(challenger.clone()), candidate_to_vote.clone()), ERR_VOTE_LOCK_CHALLENGE);
+			System::set_block_number(6926401);
+			assert_ok!(FederationModule::cancel_candidate_vote(Origin::signed(challenger.clone()), candidate_to_vote.clone()));
+			assert_ok!(FederationModule::cancel_candidate_vote(Origin::signed(voter.clone()), candidate_to_vote.clone()));
+			let free_balance_challenger = Balances::free_balance(challenger.clone());
+			let free_balance_voter = Balances::free_balance(voter.clone());
+			let candidate = FederationModule::candidate_by_account(&candidate_to_vote);
+			assert_eq!(candidate.votes_for, 0);
+			assert_eq!(free_balance_challenger, 2025);	
+			assert_eq!(free_balance_voter, 2100);	
 		});
 	}
 }
