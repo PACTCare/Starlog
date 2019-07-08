@@ -3,37 +3,22 @@
         "did": "Vec<u8>",
         "unique_name": "Vec<u8>",
         "license_code": "u16",
-        "storage_location": "Vec<u8>",
         "time": "Moment"
     },
-    "Listing": {
-        "id": "u32",
-        "data": "Vec<u8>",
-        "deposit": "u128",
-        "owner": "AccountId",
-        "application_expiry": "Moment",
-        "whitelisted": "bool",
-        "challenge_id": "u32"
-    },
-    "Challenge": {
-        "listing_hash": "Hash",
-        "deposit": "u128",
-        "owner": "AccountId",
-        "voting_ends": "Moment",
-        "resolved": "bool",
-        "reward_pool": "u128",
-        "total_tokens": "u128"
+    "Candidate": {
+        "current_rank": "u16",
+        "intended_rank": "u16",
+        "votes_for": "u64",
+        "votes_against": "u64",
+        "last_change": "BlockNumber",
+        "challenge_start": "BlockNumber"
     },
     "Vote": {
-        "value": "bool",
-        "deposit": "u128",
-        "claimed": "bool"
-    },
-    "Poll": {
-        "listing_hash": "Hash",
-        "votes_for": "u128",
-        "votes_against": "u128",
-        "passed": "bool"
-    },
-    "TokenBalance": "u128"
+        "account": "AccountId",
+        "stake_for": "Balance",
+        "stake_against": "Balance",
+        "vote_time": "BlockNumber",
+        "lock_time": "BlockNumber",
+        "challenge_id": "BlockNumber"
+    }
 }

@@ -108,6 +108,7 @@ decl_storage! {
 		/// After you switched your rank, you can only switch it again after one month
 		pub RankLock get(rank_lock) config(): T::BlockNumber = T::BlockNumber::sa(403200);
 
+		/// Lock time after new challenge
 		pub ChallengeLock get(challenge_lock) config(): T::BlockNumber = T::BlockNumber::sa(100800);
 	}
 }
@@ -124,11 +125,14 @@ decl_module! {
 			ensure!(intended_rank <= ADMIRAL_RANK, ERR_RANK_LOWER);
 			let mut candidate = Self::candidate_by_account(&sender);
 			let block_number = <system::Module<T>>::block_number();
-			ensure!(block_number - candidate.last_change >= Self::rank_lock(), ERR_RANK_LOCK);
+
+			ensure!(block_number - candidate.last_change >= Self::rank_lock() || 
+					candidate.last_change == T::BlockNumber::sa(0), ERR_RANK_LOCK);
 			candidate.intended_rank = intended_rank;
 
 			let rank = Self::_return_updated_rank(&candidate);
 			candidate.current_rank = rank;
+			candidate.last_change = block_number;
 
 			<CandidateStore<T>>::insert(sender.clone(), &candidate);
 			Self::deposit_event(RawEvent::CandidateStored(sender, intended_rank));
@@ -172,7 +176,6 @@ decl_module! {
 		}
 
 		/// Vote against candidate
-		// TODO: incognito vote, zebra
 		fn candidate_challenge(origin, candidate_id: T::AccountId, stake: T::Balance, lock_time: T::BlockNumber) -> Result {
 			let sender = ensure_signed(origin)?;
 			let mut candidate = Self::candidate_by_account(&candidate_id);
@@ -414,9 +417,8 @@ mod tests {
 	fn change_rank_works() {
 		with_externalities(&mut new_test_ext(), || {
 			assert_noop!(FederationModule::change_rank(Origin::signed(0), 7), ERR_RANK_LOWER);
-			assert_noop!(FederationModule::change_rank(Origin::signed(0), 2), ERR_RANK_LOCK);
-			System::set_block_number(5126401);
 			assert_ok!(FederationModule::change_rank(Origin::signed(0), 2));
+			assert_noop!(FederationModule::change_rank(Origin::signed(0), 3), ERR_RANK_LOCK);			
 			let candidate = FederationModule::candidate_by_account(&0);
 			assert_eq!(candidate.intended_rank, 2);
 		});
