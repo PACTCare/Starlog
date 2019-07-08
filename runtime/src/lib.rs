@@ -59,8 +59,6 @@ pub type Nonce = u64;
 // Specific Starlog modules
 mod metalog;
 
-// mod stars;
-
 mod federation;
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
@@ -197,14 +195,14 @@ impl sudo::Trait for Runtime {
 }
 
 impl contract::Trait for Runtime {
-	type Currency = Balances;
-	type Call = Call;
-	type Event = Event;
-	type Gas = u64;
-	type DetermineContractAddress = contract::SimpleAddressDeterminator<Runtime>;
-	type ComputeDispatchFee = contract::DefaultDispatchFeeComputor<Runtime>;
-	type TrieIdGenerator = contract::TrieIdFromParentCounter<Runtime>;
-	type GasPayment = ();
+    type Currency = Balances;
+    type Call = Call;
+    type Event = Event;
+    type Gas = u64;
+    type DetermineContractAddress = contract::SimpleAddressDeterminator<Runtime>;
+    type ComputeDispatchFee = contract::DefaultDispatchFeeComputor<Runtime>;
+    type TrieIdGenerator = contract::TrieIdFromParentCounter<Runtime>;
+    type GasPayment = ();
 }
 
 // Specific Starlog modules
@@ -215,11 +213,6 @@ impl metalog::Trait for Runtime {
 impl federation::Trait for Runtime {
     type Event = Event;
 }
-
-// impl stars::Trait for Runtime {
-//     type Event = Event;
-//     type TokenBalance = u128;
-// }
 
 construct_runtime!(
 	pub enum Runtime with Log(InternalLog: DigestItem<Hash, AuthorityId, AuthoritySignature>) where
@@ -238,8 +231,7 @@ construct_runtime!(
         Contract: contract::{Module, Call, Storage, Config<T>, Event<T>},
 		// Specific Starlog modules
 		Metalog: metalog::{Module, Call, Storage, Event<T>},
-		Federation: federation::{Module, Call, Storage, Event<T>},
-		// Stars: stars::{Module, Call, Storage, Event<T>, Config<T>},
+		Federation: federation::{Module, Call, Storage, Event<T>, Config<T>},
 	}
 );
 
@@ -257,7 +249,8 @@ pub type UncheckedExtrinsic =
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, Nonce, Call>;
 /// Executive: handles dispatch to the various modules.
-pub type Executive = executive::Executive<Runtime, Block, system::ChainContext<Runtime>, Balances, AllModules>;
+pub type Executive =
+    executive::Executive<Runtime, Block, system::ChainContext<Runtime>, Balances, AllModules>;
 
 // Implement our runtime API endpoints. This is just a bunch of proxying.
 impl_runtime_apis! {
@@ -326,9 +319,9 @@ impl_runtime_apis! {
     }
 
     // FIXME: needs to be commended out for tests
-    // impl consensus_authorities::AuthoritiesApi<Block> for Runtime {
-    //     fn authorities() -> Vec<AuthorityId> {
-    //         Consensus::authorities()
-    //     }
-    // }
+    impl consensus_authorities::AuthoritiesApi<Block> for Runtime {
+        fn authorities() -> Vec<AuthorityId> {
+            Consensus::authorities()
+        }
+    }
 }

@@ -1,7 +1,7 @@
 use primitives::{ed25519, sr25519, Pair};
 use starlog_runtime::{
     AccountId, BalancesConfig, ConsensusConfig,  GenesisConfig, IndicesConfig,
-    SudoConfig, TimestampConfig,ContractConfig, FederationConfig
+    SudoConfig, TimestampConfig, ContractConfig, FederationConfig,
 };
 
 use substrate_service;
@@ -140,7 +140,10 @@ fn testnet_genesis(
             captain_stake: 3000,
             engineer_stake: 2000,
             crew_stake: 1000,
-            min_stake: 10,
+            min_stake: 100,
+            min_lock: 100800,
+            rank_lock: 403200,
+            challenge_lock: 100800,
 		})
 	}
 }

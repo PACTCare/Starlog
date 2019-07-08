@@ -14,6 +14,7 @@ use support::{decl_module,
 	ensure,
 	traits::{Currency, ExistenceRequirement, WithdrawReason}, 
 	dispatch::Result};
+use rstd::prelude::*;
 use runtime_primitives::traits::{As};
 use parity_codec::{Decode, Encode};
 use system::ensure_signed;
