@@ -20,5 +20,9 @@
         "vote_time": "BlockNumber",
         "lock_time": "BlockNumber",
         "challenge_id": "BlockNumber"
+    },
+    "ChallengeResult": {
+        "success": "bool",
+        "executed": "bool"
     }
 }

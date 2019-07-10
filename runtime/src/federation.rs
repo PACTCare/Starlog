@@ -1,6 +1,6 @@
 //! # Federation Module
 //!
-//!	The Federation module implements the governance system in form of a Layered TCR.
+//!	The Federation module implements the governance system in form of a Layered Inflationary Time-lock TCR.
 //!
 //! For more information see https://github.com/PACTCare/Stars-Network/blob/master/WHITEPAPER.md#governance
 
@@ -19,7 +19,7 @@ use runtime_primitives::traits::{As};
 use parity_codec::{Decode, Encode};
 use system::ensure_signed;
 
-const ERR_RANK_LOWER: &str = "The intended rank needs to be lower than the maximum rank";
+const ERR_RANK_LOWER: &str = "Candidate already has the maximum rank";
 const ERR_RANK_LOCK: &str = "Ranks can only be changed 4 weeks after the last change";
 
 const ERR_VOTE_MIN_STAKE: &str = "To vote you need to stake at least the minimum amount of tokens";
@@ -67,7 +67,13 @@ pub struct Vote<Account, Balance, BlockNumber>{
 	pub lock_time: BlockNumber,
 	// challenge id = challenge_start for now
 	pub challenge_id: BlockNumber,
+}
 
+#[derive(Encode, Decode, Default, Clone, PartialEq)]
+#[cfg_attr(feature = "std", derive(Debug))]
+pub struct ChallengeResult{
+	pub success: bool,
+	pub executed: bool,
 }
 
 decl_storage! {
@@ -85,7 +91,7 @@ decl_storage! {
         VoteIndex get(vote_index): map (T::AccountId, T::AccountId) => u64;
 
 		/// (candidate, challenge_id) => true = successful challenge, false unsuccessful
-		ChallengeResult get(result): map (T::AccountId, T::BlockNumber) => bool;
+		ResultStore get(result): map (T::AccountId, T::BlockNumber) => ChallengeResult;
 
 		// parameters 
 		/// Minimum stake requirements for admirals
@@ -119,25 +125,25 @@ decl_module! {
 		fn deposit_event<T>() = default;
 
 		/// Change own rank
-		/// Account must have enough transferrable funds in it to pay the stake
-        fn change_rank(origin, intended_rank: u16) -> Result {
+		/// Similiar to application in classic TCR
+        fn apply_for_promotion(origin) -> Result {
 			let sender = ensure_signed(origin)?;
-			ensure!(intended_rank <= ADMIRAL_RANK, ERR_RANK_LOWER);
 			let mut candidate = Self::candidate_by_account(&sender);
+			candidate.intended_rank = candidate.current_rank + 1;
 			let block_number = <system::Module<T>>::block_number();
 
 			ensure!(block_number - candidate.last_change >= Self::rank_lock() || 
 					candidate.last_change == T::BlockNumber::sa(0), ERR_RANK_LOCK);
-			candidate.intended_rank = intended_rank;
+			ensure!(candidate.intended_rank <= ADMIRAL_RANK, ERR_RANK_LOWER);
 
-			let rank = Self::_return_updated_rank(&candidate);
-			candidate.current_rank = rank;
 			candidate.last_change = block_number;
-
+			let candidate = Self::_return_updated_rank(sender.clone(), candidate.clone());
 			<CandidateStore<T>>::insert(sender.clone(), &candidate);
-			Self::deposit_event(RawEvent::CandidateStored(sender, intended_rank));
+			Self::deposit_event(RawEvent::CandidateStored(sender, candidate.intended_rank));
 			Ok(())
 		}
+
+		// TODO: Cancel membership
 
 		/// Vote for a candidate
 		fn candidate_vote(origin, candidate_id: T::AccountId, stake: T::Balance, lock_time: T::BlockNumber) -> Result {
@@ -168,14 +174,14 @@ decl_module! {
 
 			//update candidate
 			candidate.votes_for = candidate.votes_for.checked_add(Self::_calculate_voting_power(stake, lock_time)).ok_or(ERR_OVERFLOW_VOTES)?;
-			let rank = Self::_return_updated_rank(&candidate);
-			candidate.current_rank = rank;
+			let candidate = Self::_return_updated_rank(candidate_id.clone(), candidate.clone());
 			<CandidateStore<T>>::insert(candidate_id.clone(), &candidate);
 			Self::deposit_event(RawEvent::Voted(candidate_id, stake));
 			Ok(())
 		}
 
 		/// Vote against candidate
+		/// TODO: commit-reveal https://github.com/ConsenSys/PLCRVoting
 		fn candidate_challenge(origin, candidate_id: T::AccountId, stake: T::Balance, lock_time: T::BlockNumber) -> Result {
 			let sender = ensure_signed(origin)?;
 			let mut candidate = Self::candidate_by_account(&candidate_id);
@@ -216,33 +222,35 @@ decl_module! {
 			let mut candidate = Self::candidate_by_account(&candidate_id);
 
 			let block_number = <system::Module<T>>::block_number();
-			let mut challenge_result = false;
+			let mut result = ChallengeResult {
+				success: false,
+				executed: false,
+			};
 			if (block_number - candidate.challenge_start) > Self::challenge_lock() && candidate.votes_against != 0 {
 				if candidate.votes_for >= candidate.votes_against {
-					<ChallengeResult<T>>::insert((candidate_id.clone(), candidate.challenge_start), false);
+					<ResultStore<T>>::insert((candidate_id.clone(), candidate.challenge_start), result.clone());
 				}
 				else {
-					<ChallengeResult<T>>::insert((candidate_id.clone(), candidate.challenge_start), true);
-					challenge_result = true;
+					result.success = true;
+					<ResultStore<T>>::insert((candidate_id.clone(), candidate.challenge_start), result.clone());
 				}
 				// after challenge time allow new challenge, reset previous runs 
 				candidate.votes_against = 0;
 				candidate.challenge_start = T::BlockNumber::sa(0);
 			}
 			else if old_vote.challenge_id != T::BlockNumber::sa(0) {
-				challenge_result = Self::result((candidate_id.clone(),old_vote.challenge_id));
+				result = Self::result((candidate_id.clone(),old_vote.challenge_id));
 			}
 
 			// if voted during current challenge time, can't unstake!
 			ensure!(candidate.challenge_start == T::BlockNumber::sa(0) || candidate.challenge_start > old_vote.vote_time, ERR_VOTE_LOCK_CHALLENGE);
 
-			Self::_unstake(&sender, &old_vote, challenge_result)?;
+			Self::_unstake(&sender, &old_vote, result.success)?;
 			<VoteArray<T>>::remove((sender.clone(), vote_index)); 
 			<VoteIndex<T>>::remove((sender.clone(), candidate_id.clone()));
 			
 			candidate.votes_for = candidate.votes_for.checked_sub(Self::_calculate_voting_power(old_vote.stake_for, old_vote.lock_time)).ok_or(ERR_UNDERFLOW)?;
-			let rank = Self::_return_updated_rank(&candidate);
-			candidate.current_rank = rank;
+			let candidate = Self::_return_updated_rank(candidate_id.clone(), candidate.clone());
 			<CandidateStore<T>>::insert(&candidate_id, &candidate);
 
 			Self::deposit_event(RawEvent::Voted(candidate_id, old_vote.stake_for));
@@ -324,28 +332,35 @@ impl<T: Trait> Module<T> {
 	}
 
 	/// Returns the updated rank
-	fn _return_updated_rank(candidate: &Candidate<T::BlockNumber>) -> u16{
-		let mut rank = GUEST_RANK;
+	fn _return_updated_rank(candidate_id: T::AccountId, mut candidate: Candidate<T::BlockNumber>) -> Candidate<T::BlockNumber>{
 		let block_number = <system::Module<T>>::block_number();
 		// Don't change rank during active challenge time
-		if (block_number - candidate.challenge_start) < Self::challenge_lock() {
-			rank = candidate.current_rank;
-		}
-		else {
-			if candidate.votes_for > Self::admiral_stake() && candidate.intended_rank == ADMIRAL_RANK {
-				rank = ADMIRAL_RANK;
-			} else if candidate.votes_for > Self::section31_stake() && candidate.intended_rank == SECTION31_RANK {
-				rank = SECTION31_RANK;
-			} else if candidate.votes_for > Self::captain_stake() && candidate.intended_rank == CAPTAIN_RANK {
-				rank = CAPTAIN_RANK;
-			} else if candidate.votes_for > Self::engineer_stake() && candidate.intended_rank == ENGINEER_RANK {
-				rank = ENGINEER_RANK;
-			} else if candidate.votes_for > Self::crew_stake() && candidate.intended_rank == CREW_RANK {
-				rank = CREW_RANK;
-			} 
+		if (block_number - candidate.challenge_start) >= Self::challenge_lock() {
+			// get last challenge result
+			let mut result = Self::result((candidate_id.clone(), candidate.challenge_start));
+			// in the case of an successful challenge, loose ranks and stake
+			if candidate.challenge_start != T::BlockNumber::sa(0) && result.success && !result.executed {
+				candidate.current_rank = GUEST_RANK;
+				candidate.votes_for = 0;
+				result.executed = true;
+				<ResultStore<T>>::insert((candidate_id.clone(), candidate.challenge_start), result);
+			}
+			else {
+				if candidate.votes_for > Self::admiral_stake() && candidate.intended_rank == ADMIRAL_RANK {
+					candidate.current_rank = ADMIRAL_RANK;
+				} else if candidate.votes_for > Self::section31_stake() && candidate.intended_rank == SECTION31_RANK {
+					candidate.current_rank = SECTION31_RANK;
+				} else if candidate.votes_for > Self::captain_stake() && candidate.intended_rank == CAPTAIN_RANK {
+					candidate.current_rank = CAPTAIN_RANK;
+				} else if candidate.votes_for > Self::engineer_stake() && candidate.intended_rank == ENGINEER_RANK {
+					candidate.current_rank = ENGINEER_RANK;
+				} else if candidate.votes_for > Self::crew_stake() && candidate.intended_rank == CREW_RANK {
+					candidate.current_rank = CREW_RANK;
+				} 
+			}
 		}
 
-		rank
+		candidate
 	}
 }
 
@@ -414,13 +429,14 @@ mod tests {
 
 
 	#[test]
-	fn change_rank_works() {
+	fn apply_for_promotion_works() {
 		with_externalities(&mut new_test_ext(), || {
-			assert_noop!(FederationModule::change_rank(Origin::signed(0), 7), ERR_RANK_LOWER);
-			assert_ok!(FederationModule::change_rank(Origin::signed(0), 2));
-			assert_noop!(FederationModule::change_rank(Origin::signed(0), 3), ERR_RANK_LOCK);			
+			assert_ok!(FederationModule::apply_for_promotion(Origin::signed(0)));
+			assert_noop!(FederationModule::apply_for_promotion(Origin::signed(0)), ERR_RANK_LOCK);			
 			let candidate = FederationModule::candidate_by_account(&0);
-			assert_eq!(candidate.intended_rank, 2);
+			assert_eq!(candidate.intended_rank, 1);
+			
+			// assert_noop!(FederationModule::apply_for_promotion(Origin::signed(0)), ERR_RANK_LOWER);
 		});
 	}
 
@@ -429,13 +445,12 @@ mod tests {
 		with_externalities(&mut new_test_ext(), || {
 			let candidate_to_vote: u64 = 2;
 			let voter: u64 = 0;
-			let intended_rank: u16 = 5;
 			let stake: u64 = 7001;
 			let lock: u64 = 1000000;
 
 			assert_noop!(FederationModule::candidate_vote(Origin::signed(1), 1, stake.clone(), lock.clone()), ERR_VOTE_RANK);
 			System::set_block_number(500000);
-			let _ = FederationModule::change_rank(Origin::signed(candidate_to_vote.clone()), intended_rank.clone());
+			let _ = FederationModule::apply_for_promotion(Origin::signed(candidate_to_vote.clone()));
 			assert_noop!(
                 FederationModule::candidate_vote(Origin::signed(1), candidate_to_vote.clone(), stake.clone(), lock.clone()),
                 ERR_BALANCE_LOW
@@ -455,7 +470,7 @@ mod tests {
 			);
 			let candidate = FederationModule::candidate_by_account(candidate_to_vote.clone());
 			assert_eq!(candidate.votes_for, 6884);
-			assert_eq!(candidate.current_rank, intended_rank);
+			assert_eq!(candidate.current_rank, 1);
 			let vote = FederationModule::votes_of_owner_by_index((voter.clone(), 1));
 			assert_eq!(vote.stake_for, stake);
 		});
@@ -468,11 +483,10 @@ mod tests {
 			let voter: u64 = 0;
 			let stake: u64 = 7001;
 			let lock: u64 = 1000000;
-			let intended_rank: u16 = 5;
 			// TODO: test all scenarios
 			assert_noop!(FederationModule::candidate_challenge(Origin::signed(1), 1, stake.clone(), lock.clone()), ERR_VOTE_RANK);
 			System::set_block_number(500000);
-			let _ = FederationModule::change_rank(Origin::signed(candidate_to_challenge.clone()), intended_rank.clone());
+			let _ = FederationModule::apply_for_promotion(Origin::signed(candidate_to_challenge.clone()));
 			assert_noop!(FederationModule::candidate_challenge(Origin::signed(1), candidate_to_challenge.clone(), stake.clone(), lock.clone()), ERR_BALANCE_LOW);
 			let _ = Balances::make_free_balance_be(&voter, 200000);
 			assert_ok!(FederationModule::candidate_challenge(Origin::signed(voter.clone()), candidate_to_challenge.clone(), stake.clone(), lock.clone()));	
@@ -491,7 +505,7 @@ mod tests {
 			assert_noop!(FederationModule::cancel_candidate_vote(Origin::signed(voter.clone()), candidate_to_vote.clone()), ERR_VOTE_EXIST);
 			let _ = Balances::make_free_balance_be(&voter, 2000);
 			System::set_block_number(500000);
-			let _ = FederationModule::change_rank(Origin::signed(candidate_to_vote.clone()), 2);
+			let _ = FederationModule::apply_for_promotion(Origin::signed(candidate_to_vote.clone()));
 			assert_ok!(FederationModule::candidate_vote(Origin::signed(voter.clone()), candidate_to_vote.clone(), 1000, 200000));
 			// 5126400 Blocks per year -> 10 % income per year
 			assert_noop!(FederationModule::cancel_candidate_vote(Origin::signed(voter.clone()), candidate_to_vote.clone()), ERR_VOTE_LOCK);	

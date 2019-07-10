@@ -16,7 +16,7 @@ use support::{
 use system::ensure_signed;
 
 // FIXME: needs to be removed for building the runtime
-// use runtime_io::{with_storage, StorageOverlay, ChildrenStorageOverlay};
+use runtime_io::{with_storage, StorageOverlay, ChildrenStorageOverlay};
 
 const ERR_DID_ALREADY_CLAIMED: &str = "This DID has already been claimed.";
 const ERR_DID_NOT_EXIST: &str = "This DID does not exist";
@@ -84,26 +84,26 @@ decl_storage! {
     }
 
     //FIXME: needs to be removed for building the runtime
-    // add_extra_genesis {
-    //     config(metalog): Vec<(T::AccountId, u16)>;
-    //     build(|storage: &mut StorageOverlay, _: &mut ChildrenStorageOverlay, config: &GenesisConfig<T>| {
-    //         with_storage(storage, || {
-    //             for &(ref acct, license_code) in &config.metalog {
-    // 				let did = vec![1,2,3];
-    // 				let time = <timestamp::Module<T>>::now();
-    // 				let mut default_name = Vec::new();
-    // 				default_name.push(0);
-    // 				let new_metadata = Metalog {
-    // 					did: did.clone(),
-    // 					unique_name: default_name,
-    // 					license_code,
-    // 					time,
-    // 				};
-    //                 let _ = <Module<T>>::_owner_store(acct.clone(), new_metadata);
-    //             }
-    //         });
-    //     });
-    // }
+    add_extra_genesis {
+        config(metalog): Vec<(T::AccountId, u16)>;
+        build(|storage: &mut StorageOverlay, _: &mut ChildrenStorageOverlay, config: &GenesisConfig<T>| {
+            with_storage(storage, || {
+                for &(ref acct, license_code) in &config.metalog {
+    				let did = vec![1,2,3];
+    				let time = <timestamp::Module<T>>::now();
+    				let mut default_name = Vec::new();
+    				default_name.push(0);
+    				let new_metadata = Metalog {
+    					did: did.clone(),
+    					unique_name: default_name,
+    					license_code,
+    					time,
+    				};
+                    let _ = <Module<T>>::_owner_store(acct.clone(), new_metadata);
+                }
+            });
+        });
+    }
 }
 
 decl_module! {
