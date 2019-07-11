@@ -79,8 +79,6 @@ decl_storage! {
         /// Query by DIDs
         DidMeta get(meta_of_did): map Vec<u8> => Metalog<T::Moment>;
         DidOwner get(owner_of_did): map Vec<u8> => Option<T::AccountId>;
-
-
     }
 
     //FIXME: needs to be removed for building the runtime

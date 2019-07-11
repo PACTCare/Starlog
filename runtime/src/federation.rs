@@ -2,10 +2,8 @@
 //!
 //!	The Federation module implements the governance system in form of a Layered Inflationary Time-lock TCR.
 //!
-//! For more information see https://github.com/PACTCare/Stars-Network/blob/master/WHITEPAPER.md#governance
-
-// TODO: 
-// refactor testing pre set accounts
+//! For more information see https://blog.florence.chat/layered-inflationary-time-lock-token-curated-registry-littcr-no-litter-7d8702522b2
+//! as well as the whitepaper here https://github.com/PACTCare/Stars-Network/blob/master/WHITEPAPER.md#governance
 
 use support::{decl_module, 
 	decl_storage, 
@@ -15,12 +13,13 @@ use support::{decl_module,
 	traits::{Currency, ExistenceRequirement, WithdrawReason}, 
 	dispatch::Result};
 use rstd::prelude::*;
-use runtime_primitives::traits::{As};
+use runtime_primitives::traits::{As, CheckedSub};
 use parity_codec::{Decode, Encode};
 use system::ensure_signed;
 
 const ERR_RANK_LOWER: &str = "Candidate already has the maximum rank";
 const ERR_RANK_LOCK: &str = "Ranks can only be changed 4 weeks after the last change";
+const ERR_RANK_HIGHER: &str = "Rank needs to be above guest rank to be canceled";
 
 const ERR_VOTE_MIN_STAKE: &str = "To vote you need to stake at least the minimum amount of tokens";
 const ERR_VOTE_MIN_LOCK: &str = "To vote you need to lock at least for one week";
@@ -32,7 +31,7 @@ const ERR_VOTE_DOUBLE: &str = "The previous vote needs to be canceled for this, 
 
 const ERR_OVERFLOW_VOTES: &str = "Overflow adding new votes";
 const ERR_OVERFLOW_COUNT: &str = "Overflow increasing vote count";
-const ERR_UNDERFLOW: &str = "Underflow removing votes";
+const ERR_UNDERFLOW: &str = "Underflow subtraction error";
 
 const ADMIRAL_RANK: u16 = 5;
 const SECTION31_RANK: u16 = 4;
@@ -79,7 +78,7 @@ pub struct ChallengeResult{
 decl_storage! {
 	trait Store for Module<T: Trait> as FederationModule {
 		/// Query by candidate
-        CandidateStore get(candidate_by_account): map T::AccountId => Candidate<T::BlockNumber>;
+        pub CandidateStore get(candidate_by_account): map T::AccountId => Candidate<T::BlockNumber>;
 
 		/// Array of personal votes
         VoteArray get(votes_of_owner_by_index): map (T::AccountId, u64) => Vote<T::AccountId, T::Balance, T::BlockNumber>;
@@ -95,27 +94,27 @@ decl_storage! {
 
 		// parameters 
 		/// Minimum stake requirements for admirals
-		pub AdmiralStake get(admiral_stake) config(): u64 = 5000;
+		AdmiralStake get(admiral_stake) config(): u64 = 5000;
 		/// Minimum stake requirements for sections31	
-		pub Section31Stake get(section31_stake) config(): u64 = 4000;
+		Section31Stake get(section31_stake) config(): u64 = 4000;
 		/// Minimum stake requirements for captains		
-		pub CaptainStake get(captain_stake) config(): u64 = 3000;
+		CaptainStake get(captain_stake) config(): u64 = 3000;
 		/// Minimum stake requirements for engineers		
-		pub EngineerStake get(engineer_stake) config(): u64 = 2000;
+		EngineerStake get(engineer_stake) config(): u64 = 2000;
 		/// Minimum stake requirements for crew members		
-		pub CrewStake get(crew_stake) config(): u64 = 1000;
+		CrewStake get(crew_stake) config(): u64 = 1000;
 
 		/// Minimum stake
-		pub MinStake get(min_stake) config(): u64 = 100;
+		MinStake get(min_stake) config(): u64 = 100;
 
 		/// Minimum lock up time, one week with 6 seconds blocktime
-		pub MinLockTime get(min_lock) config(): u64 = 100800;
+		MinLockTime get(min_lock) config(): u64 = 100800;
 
 		/// After you switched your rank, you can only switch it again after one month
-		pub RankLock get(rank_lock) config(): T::BlockNumber = T::BlockNumber::sa(403200);
+		RankLock get(rank_lock) config(): T::BlockNumber = T::BlockNumber::sa(403200);
 
 		/// Lock time after new challenge
-		pub ChallengeLock get(challenge_lock) config(): T::BlockNumber = T::BlockNumber::sa(100800);
+		ChallengeLock get(challenge_lock) config(): T::BlockNumber = T::BlockNumber::sa(100800);
 	}
 }
 
@@ -137,13 +136,22 @@ decl_module! {
 			ensure!(candidate.intended_rank <= ADMIRAL_RANK, ERR_RANK_LOWER);
 
 			candidate.last_change = block_number;
-			let candidate = Self::_return_updated_rank(sender.clone(), candidate.clone());
-			<CandidateStore<T>>::insert(sender.clone(), &candidate);
+			Self::updated_rank_store(sender.clone(), candidate.clone())?;
 			Self::deposit_event(RawEvent::CandidateStored(sender, candidate.intended_rank));
 			Ok(())
 		}
 
-		// TODO: Cancel membership
+		/// Cancel membership
+		fn cancel_membership(origin) -> Result{
+			let sender = ensure_signed(origin)?;
+			let mut candidate = Self::candidate_by_account(&sender);
+			ensure!(candidate.current_rank > GUEST_RANK, ERR_RANK_HIGHER);
+			candidate.intended_rank = 0;
+			candidate.current_rank = 0;
+			<CandidateStore<T>>::insert(sender.clone(), &candidate);
+			Self::deposit_event(RawEvent::CandidateCanceled(sender, candidate.current_rank));
+			Ok(())
+		}
 
 		/// Vote for a candidate
 		fn candidate_vote(origin, candidate_id: T::AccountId, stake: T::Balance, lock_time: T::BlockNumber) -> Result {
@@ -158,7 +166,8 @@ decl_module! {
 			let vote_time = <system::Module<T>>::block_number();
 			let mut challenge_id = T::BlockNumber::sa(0);
 			//if active challenge add challenge id
-			if (vote_time - candidate.challenge_start) <= Self::challenge_lock() {
+			let past_time = vote_time.checked_sub(&candidate.challenge_start).ok_or(ERR_UNDERFLOW)?;
+			if past_time <= Self::challenge_lock() {
 				challenge_id = candidate.challenge_start;
 			}
 			let vote = Vote {
@@ -174,8 +183,7 @@ decl_module! {
 
 			//update candidate
 			candidate.votes_for = candidate.votes_for.checked_add(Self::_calculate_voting_power(stake, lock_time)).ok_or(ERR_OVERFLOW_VOTES)?;
-			let candidate = Self::_return_updated_rank(candidate_id.clone(), candidate.clone());
-			<CandidateStore<T>>::insert(candidate_id.clone(), &candidate);
+			Self::updated_rank_store(candidate_id.clone(), candidate.clone())?;
 			Self::deposit_event(RawEvent::Voted(candidate_id, stake));
 			Ok(())
 		}
@@ -250,9 +258,7 @@ decl_module! {
 			<VoteIndex<T>>::remove((sender.clone(), candidate_id.clone()));
 			
 			candidate.votes_for = candidate.votes_for.checked_sub(Self::_calculate_voting_power(old_vote.stake_for, old_vote.lock_time)).ok_or(ERR_UNDERFLOW)?;
-			let candidate = Self::_return_updated_rank(candidate_id.clone(), candidate.clone());
-			<CandidateStore<T>>::insert(&candidate_id, &candidate);
-
+			Self::updated_rank_store(candidate_id.clone(), candidate.clone())?;
 			Self::deposit_event(RawEvent::Voted(candidate_id, old_vote.stake_for));
 			Ok(())
 		}
@@ -265,6 +271,7 @@ decl_event!(
 	<T as balances::Trait>::Balance 
 	{
 		CandidateStored(AccountId, u16),
+		CandidateCanceled(AccountId, u16),
 		Voted(AccountId, Balance),
 		Challenged(AccountId, Balance),
 		CancelVote(AccountId, Balance),
@@ -316,7 +323,7 @@ impl<T: Trait> Module<T> {
 			ensure!(old_vote.stake_against >=  T::Balance::sa(Self::min_stake()), ERR_VOTE_EXIST);
 		}
 		let block_number = <system::Module<T>>::block_number();
-		let block_dif = block_number - old_vote.vote_time;
+		let block_dif = block_number.checked_sub(&old_vote.vote_time).ok_or(ERR_UNDERFLOW)?;
 
 		// you have only access to your money after lock_time
 		ensure!(block_dif > old_vote.lock_time, ERR_VOTE_LOCK);
@@ -332,10 +339,11 @@ impl<T: Trait> Module<T> {
 	}
 
 	/// Returns the updated rank
-	fn _return_updated_rank(candidate_id: T::AccountId, mut candidate: Candidate<T::BlockNumber>) -> Candidate<T::BlockNumber>{
+	pub fn updated_rank_store(candidate_id: T::AccountId, mut candidate: Candidate<T::BlockNumber>) -> Result{
 		let block_number = <system::Module<T>>::block_number();
 		// Don't change rank during active challenge time
-		if (block_number - candidate.challenge_start) >= Self::challenge_lock() {
+		let blocks_since_start = block_number.checked_sub(&candidate.challenge_start).ok_or(ERR_UNDERFLOW)?;
+		if blocks_since_start >= Self::challenge_lock() {
 			// get last challenge result
 			let mut result = Self::result((candidate_id.clone(), candidate.challenge_start));
 			// in the case of an successful challenge, loose ranks and stake
@@ -360,7 +368,8 @@ impl<T: Trait> Module<T> {
 			}
 		}
 
-		candidate
+		<CandidateStore<T>>::insert(candidate_id.clone(), &candidate);
+		Ok(())
 	}
 }
 
@@ -421,10 +430,9 @@ mod tests {
 	type System = system::Module<Test>;
 	type FederationModule = Module<Test>;
 
-	// This function basically just builds a genesis storage key/value store according to
-	// our desired mockup.
 	fn new_test_ext() -> runtime_io::TestExternalities<Blake2Hasher> {
-		system::GenesisConfig::<Test>::default().build_storage().unwrap().0.into()
+		let t = system::GenesisConfig::<Test>::default().build_storage().unwrap().0;
+        t.into()
 	}
 
 
@@ -433,10 +441,33 @@ mod tests {
 		with_externalities(&mut new_test_ext(), || {
 			assert_ok!(FederationModule::apply_for_promotion(Origin::signed(0)));
 			assert_noop!(FederationModule::apply_for_promotion(Origin::signed(0)), ERR_RANK_LOCK);			
-			let candidate = FederationModule::candidate_by_account(&0);
+			let mut candidate = FederationModule::candidate_by_account(&0);
 			assert_eq!(candidate.intended_rank, 1);
+			candidate.current_rank = 5;
+			let _ = FederationModule::updated_rank_store(0, candidate);
+			System::set_block_number(500000);
+			assert_noop!(FederationModule::apply_for_promotion(Origin::signed(0)), ERR_RANK_LOWER);
+		});
+	}
+
+	#[test]
+	fn cancel_membership_works() {
+		with_externalities(&mut new_test_ext(), || {
+			assert_noop!(FederationModule::cancel_membership(Origin::signed(0)), ERR_RANK_HIGHER);
+			let candidate = Candidate {
+				current_rank: 1, 
+				intended_rank: 1, // Same Rank Means Nothing to vote
+				votes_for: 1000, 
+				votes_against: 1000,
+				last_change: 0,
+				challenge_start:0,
+			};
 			
-			// assert_noop!(FederationModule::apply_for_promotion(Origin::signed(0)), ERR_RANK_LOWER);
+			let _ = FederationModule::updated_rank_store(0, candidate);
+			assert_ok!(FederationModule::cancel_membership(Origin::signed(0)));			
+			let candidate = FederationModule::candidate_by_account(&0);
+			assert_eq!(candidate.intended_rank, 0);
+			assert_eq!(candidate.current_rank, 0);
 		});
 	}
 
